@@ -24,7 +24,6 @@ export async function fetchUserProfiles(
   if (snapshot.docs.length > 0) {
     const first = snapshot.docs[0].data();
     console.log("[users sample raw]", snapshot.docs[0].id, first);
-    console.log("[users loaded first]", first?.name, first?.profile);
   } else {
     console.warn("[users] 컬렉션이 비어있습니다.");
   }

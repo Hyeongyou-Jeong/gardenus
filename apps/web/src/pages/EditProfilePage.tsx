@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
-import { Header, Button, MbtiAxisScroll } from "@/ui";
-import type { MbtiAxisValue } from "@/ui";
+import { Header, Button } from "@/ui";
 import {
   fetchMyProfile,
   upsertMyProfile,
@@ -14,12 +13,12 @@ import { color, radius, shadow, typo } from "@gardenus/shared";
    ================================================================ */
 
 const PREF_OPTIONS: Record<string, string[]> = {
-  contactPref: ["상관없음", "메세지선호", "전화선호"],
-  cigar: ["비흡연", "흡연", "가끔"],
-  drinking: ["거의 안먹음", "주 1~3회", "주 4회 이상"],
+  contactPref: ["상관없음", "전화", "카카오톡"],
+  cigar: ["비흡연", "가끔", "흡연"],
+  drinking: ["거의 안먹음", "가끔", "자주", "매우 자주"],
   affectionLevel: ["높은", "중간", "낮은"],
   jealousyLevel: ["높은", "중간", "낮은"],
-  meetingPref: ["상관없음", "빨리 만나요", "편하게 만나요", "천천히 알아가요"],
+  meetingPref: ["상관없음", "데이트", "소개팅"],
 };
 
 const PREF_LABELS: Record<string, string> = {
@@ -368,22 +367,16 @@ export const EditProfilePage: React.FC = () => {
   const [aboutme, setAboutme] = useState("");
   const [profileImageId, setProfileImageId] = useState("1");
 
-  /* 내특징 / 관심사 / 이상형 배열 */
-  const [myTraits, setMyTraits] = useState<string[]>([]);
-  const [interests, setInterests] = useState<string[]>([]);
-  const [idealTraits, setIdealTraits] = useState<string[]>([]);
-
-  /* MBTI 축 (0=왼 극단, 100=오른 극단) — S/N, T/F, J/P는 기존 슬라이더 */
+  /* MBTI 축 (0=왼 극단, 100=오른 극단) */
   const [ei, setEi] = useState(50);
   const [sn, setSn] = useState(50);
   const [tf, setTf] = useState(50);
   const [jp, setJp] = useState(50);
 
-  /* MBTI E/I 스크롤 선택 (letter + 강도 퍼센트) */
-  const [mbtiEIAxis, setMbtiEIAxis] = useState<MbtiAxisValue>({
-    letter: "I",
-    percent: 0,
-  });
+  /* 내특징 / 관심사 / 이상형 */
+  const [myTraits, setMyTraits] = useState<string[]>([]);
+  const [interests, setInterests] = useState<string[]>([]);
+  const [idealTraits, setIdealTraits] = useState<string[]>([]);
 
   /* 선호도 */
   const [prefs, setPrefs] = useState<Record<string, string>>({
@@ -398,35 +391,6 @@ export const EditProfilePage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-
-  /* ---- SelectionPage에서 돌아온 결과 수신 ---- */
-  useEffect(() => {
-    const field = searchParams.get("field");
-    const valuesRaw = searchParams.get("values");
-    if (!field || !valuesRaw) return;
-
-    try {
-      const arr = JSON.parse(decodeURIComponent(valuesRaw)) as string[];
-      switch (field) {
-        case "myTraits":
-          setMyTraits(arr);
-          break;
-        case "interests":
-          setInterests(arr);
-          break;
-        case "idealTraits":
-          setIdealTraits(arr);
-          break;
-      }
-    } catch (e) {
-      console.warn("[EditProfile] selection params parse error", e);
-    }
-
-    // URL 정리
-    searchParams.delete("field");
-    searchParams.delete("values");
-    setSearchParams(searchParams, { replace: true });
-  }, [searchParams, setSearchParams]);
 
   /* ---- 기존 프로필 로드 ---- */
   useEffect(() => {
@@ -447,33 +411,7 @@ export const EditProfilePage: React.FC = () => {
         setAboutme(p.aboutme ?? "");
         setProfileImageId(p.profileImageId ?? "1");
 
-        // MBTI E/I 스크롤 축
-        if (p.mbtiEILetter && p.mbtiEIPercent != null) {
-          setMbtiEIAxis({
-            letter: p.mbtiEILetter,
-            percent: p.mbtiEIPercent,
-          });
-        } else if (p.mbtiEI != null) {
-          // 레거시 호환: 0~100 값 → letter/percent 변환
-          const isI = p.mbtiEI >= 50;
-          setMbtiEIAxis({
-            letter: isI ? "I" : "E",
-            percent: isI
-              ? Math.round((p.mbtiEI - 50) * 2)
-              : Math.round((50 - p.mbtiEI) * 2),
-          });
-        } else if (p.mbti) {
-          const axes = mbtiStringToAxes(p.mbti);
-          const isI = axes.ei >= 50;
-          setMbtiEIAxis({
-            letter: isI ? "I" : "E",
-            percent: isI
-              ? Math.round((axes.ei - 50) * 2)
-              : Math.round((50 - axes.ei) * 2),
-          });
-        }
-
-        // MBTI 나머지 축 (기존 슬라이더)
+        // MBTI 축
         if (p.mbtiEI != null) setEi(p.mbtiEI);
         else if (p.mbti) {
           const axes = mbtiStringToAxes(p.mbti);
@@ -497,10 +435,10 @@ export const EditProfilePage: React.FC = () => {
           ...(p.meetingPref ? { meetingPref: p.meetingPref } : {}),
         }));
 
-        // 배열 태그
-        if (Array.isArray(p.myTraits)) setMyTraits(p.myTraits);
-        if (Array.isArray(p.interests)) setInterests(p.interests);
-        if (Array.isArray(p.idealTraits)) setIdealTraits(p.idealTraits);
+        // 태그 배열
+        if (p.myTraits) setMyTraits(p.myTraits);
+        if (p.interests) setInterests(p.interests);
+        if (p.idealTraits) setIdealTraits(p.idealTraits);
       })
       .catch((e) => console.error("[EditProfile] load failed", e))
       .finally(() => {
@@ -509,6 +447,28 @@ export const EditProfilePage: React.FC = () => {
 
     return () => { alive = false; };
   }, [userId]);
+
+  /* ---- SelectionPage에서 돌아올 때 URL params 처리 ---- */
+  const selectionHandled = useRef(false);
+  useEffect(() => {
+    if (selectionHandled.current) return;
+    const field = searchParams.get("field");
+    const valuesRaw = searchParams.get("values");
+    if (!field || !valuesRaw) return;
+
+    selectionHandled.current = true;
+    try {
+      const values = JSON.parse(decodeURIComponent(valuesRaw)) as string[];
+      if (field === "myTraits") setMyTraits(values);
+      else if (field === "interests") setInterests(values);
+      else if (field === "idealTraits") setIdealTraits(values);
+    } catch { /* ignore */ }
+
+    // URL 정리
+    searchParams.delete("field");
+    searchParams.delete("values");
+    setSearchParams(searchParams, { replace: true });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---- 선호도 순환 ---- */
   const cyclePref = (key: string) => {
@@ -545,20 +505,15 @@ export const EditProfilePage: React.FC = () => {
         department: department.trim() || undefined,
         aboutme: aboutme.trim() || undefined,
         profileImageId: profileImageId || undefined,
-        mbti: axesToMbtiString(
-          mbtiEIAxis.letter === "I" ? 50 + mbtiEIAxis.percent / 2 : 50 - mbtiEIAxis.percent / 2,
-          sn, tf, jp
-        ),
+        mbti: axesToMbtiString(ei, sn, tf, jp),
         mbtiEI: ei,
-        mbtiEILetter: mbtiEIAxis.letter,
-        mbtiEIPercent: mbtiEIAxis.percent,
         mbtiSN: sn,
         mbtiTF: tf,
         mbtiJP: jp,
-        ...prefs,
         myTraits,
         interests,
         idealTraits,
+        ...prefs,
       });
       navigate("/me");
     } catch (err: any) {
@@ -669,20 +624,7 @@ export const EditProfilePage: React.FC = () => {
         {/* ==================== 카드 2: MBTI ==================== */}
         <div style={s.card}>
           <p style={s.cardTitle}>MBTI</p>
-
-          {/* E / I — 가로 스크롤 */}
-          <MbtiAxisScroll
-            leftLabel="E"
-            leftSub="외향형"
-            rightLabel="I"
-            rightSub="내향형"
-            value={mbtiEIAxis}
-            onChange={setMbtiEIAxis}
-          />
-
-          <div style={{ marginTop: 14 }} />
-
-          {/* S/N, T/F, J/P — 기존 슬라이더 */}
+          <MbtiSlider leftLabel="E" leftSub="외향형" rightLabel="I" rightSub="내향형" value={ei} onChange={setEi} />
           <MbtiSlider leftLabel="S" leftSub="감각형" rightLabel="N" rightSub="직관형" value={sn} onChange={setSn} />
           <MbtiSlider leftLabel="T" leftSub="사고형" rightLabel="F" rightSub="감정형" value={tf} onChange={setTf} />
           <MbtiSlider leftLabel="J" leftSub="판단형" rightLabel="P" rightSub="인식형" value={jp} onChange={setJp} />
@@ -694,7 +636,6 @@ export const EditProfilePage: React.FC = () => {
             icon={<IcPerson />}
             label="내특징"
             sub={myTraits.length > 0 ? `${myTraits.length}개 선택됨` : "선택해주세요."}
-            selected={myTraits}
             onClick={() =>
               navigate(
                 `/select?mode=traits&title=${encodeURIComponent("내특징 선택")}&field=myTraits&returnTo=/me/edit&current=${encodeURIComponent(JSON.stringify(myTraits))}`
@@ -706,7 +647,6 @@ export const EditProfilePage: React.FC = () => {
             icon={<IcSparkle />}
             label="관심사"
             sub={interests.length > 0 ? `${interests.length}개 선택됨` : "선택해주세요."}
-            selected={interests}
             onClick={() =>
               navigate(
                 `/select?mode=interests&title=${encodeURIComponent("관심사 선택")}&field=interests&returnTo=/me/edit&current=${encodeURIComponent(JSON.stringify(interests))}`
@@ -718,7 +658,6 @@ export const EditProfilePage: React.FC = () => {
             icon={<IcHeart />}
             label="이상형"
             sub={idealTraits.length > 0 ? `${idealTraits.length}개 선택됨` : "선택해주세요."}
-            selected={idealTraits}
             onClick={() =>
               navigate(
                 `/select?mode=ideal&title=${encodeURIComponent("이상형 선택")}&field=idealTraits&returnTo=/me/edit&current=${encodeURIComponent(JSON.stringify(idealTraits))}`
@@ -804,28 +743,14 @@ const TagRow: React.FC<{
   icon: React.ReactNode;
   label: string;
   sub: string;
-  selected?: string[];
   onClick?: () => void;
-}> = ({ icon, label, sub, selected, onClick }) => (
+}> = ({ icon, label, sub, onClick }) => (
   <div style={s.tagRow} onClick={onClick}>
-    <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
       {icon}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div>
         <p style={{ ...typo.subheading, color: color.gray900, fontSize: 14 }}>{label}</p>
-        {selected && selected.length > 0 ? (
-          <div style={s.tagPreview}>
-            {selected.slice(0, 3).map((v) => (
-              <span key={v} style={s.tagMiniChip}>{v}</span>
-            ))}
-            {selected.length > 3 && (
-              <span style={{ ...typo.caption, color: color.gray400 }}>
-                +{selected.length - 3}
-              </span>
-            )}
-          </div>
-        ) : (
-          <p style={{ ...typo.caption, color: color.gray400 }}>{sub}</p>
-        )}
+        <p style={{ ...typo.caption, color: color.gray400 }}>{sub}</p>
       </div>
     </div>
     <IcChevron />
@@ -1017,22 +942,6 @@ const s: Record<string, React.CSSProperties> = {
     alignItems: "center",
     padding: "14px 0",
     cursor: "pointer",
-  },
-  tagPreview: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: 4,
-    marginTop: 2,
-  },
-  tagMiniChip: {
-    display: "inline-block",
-    padding: "2px 8px",
-    borderRadius: radius.full,
-    background: color.mint50,
-    color: color.mint700,
-    fontSize: 11,
-    fontWeight: 600,
-    whiteSpace: "nowrap" as const,
   },
   divider: {
     height: 1,

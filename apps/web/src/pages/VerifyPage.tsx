@@ -156,7 +156,26 @@ export const VerifyPage: React.FC = () => {
             )}
           </span>
           <span style={styles.checkLabel}>
-            이용약관 및 개인정보 수집 이용 동의
+            <a
+              href="https://play-in.notion.site/1218855ab179809b84d0e3d5040f88c1"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={styles.link}
+              onClick={(e) => e.stopPropagation()}
+            >
+              이용약관
+            </a>
+            {" 및 "}
+            <a
+              href="https://play-in.notion.site/1218855ab179804d9319d9b100d94630"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={styles.link}
+              onClick={(e) => e.stopPropagation()}
+            >
+              개인정보 수집 이용
+            </a>
+            {" 동의"}
           </span>
         </label>
       </div>
@@ -254,6 +273,11 @@ const styles: Record<string, React.CSSProperties> = {
   checkLabel: {
     ...typo.body,
     color: color.gray700,
+  },
+  link: {
+    color: color.mint600,
+    fontWeight: 600,
+    textDecoration: "underline",
   },
   bottom: {
     padding: "20px",

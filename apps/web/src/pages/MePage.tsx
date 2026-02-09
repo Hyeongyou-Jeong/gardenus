@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
-import { Header, TabBar } from "@/ui";
+import { Header, TabBar, Modal } from "@/ui";
 import { fetchMyProfile } from "@/domains/profile/profile.repo";
 import type { UserProfile } from "@/domains/profile/profile.types";
 import { color, radius, typo } from "@gardenus/shared";
@@ -76,6 +76,9 @@ export const MePage: React.FC = () => {
   const [toggleMatch, setToggleMatch] = useState(true);
   const [toggleNotify, setToggleNotify] = useState(false);
 
+  const [logoutModal, setLogoutModal] = useState(false);
+  const [withdrawModal, setWithdrawModal] = useState(false);
+
   /* ---- 접근 제어 ---- */
   useEffect(() => {
     if (!authLoading && !isAuthed) {
@@ -104,6 +107,21 @@ export const MePage: React.FC = () => {
   }, [userId]);
 
   const handleLogout = () => {
+    setLogoutModal(false);
+    logout();
+    navigate("/");
+  };
+
+  const handleWithdraw = async () => {
+    setWithdrawModal(false);
+    try {
+      const { auth } = await import("@/infra/firebase/client");
+      if (auth?.currentUser) {
+        await auth.currentUser.delete();
+      }
+    } catch (err) {
+      console.error("[MePage] 회원탈퇴 실패:", err);
+    }
     logout();
     navigate("/");
   };
@@ -193,22 +211,46 @@ export const MePage: React.FC = () => {
             label="미응답 메시지 알림받기(오후 7시)"
             right={<Toggle value={toggleNotify} onChange={setToggleNotify} />}
           />
-          <Row label="문의하기" right={<Chevron />} />
-          <Row label="개인정보 처리방침" right={<Chevron />} />
-          <Row label="이용약관" right={<Chevron />} />
-          <Row label="환불정책" right={<Chevron />} />
+          <Row label="문의하기" right={<Chevron />} onClick={() => navigate("/inquiry")} />
+          <Row label="개인정보 처리방침" right={<Chevron />} onClick={() => window.open("https://play-in.notion.site/1218855ab179804d9319d9b100d94630", "_blank")} />
+          <Row label="이용약관" right={<Chevron />} onClick={() => window.open("https://play-in.notion.site/1218855ab179809b84d0e3d5040f88c1", "_blank")} />
+          <Row label="환불정책" right={<Chevron />} onClick={() => window.open("https://play-in.notion.site/1368855ab17980aa98ade7be7feaa783", "_blank")} />
         </div>
 
         {/* 계정관련 */}
         <div style={styles.section}>
           <p style={styles.sectionTitle}>계정관련</p>
           <Row label="이용 제한 내역" right={<Chevron />} />
-          <Row label="회원탈퇴" right={<Chevron />} />
-          <Row label="로그아웃" right={<Chevron />} onClick={handleLogout} />
+          <Row label="회원탈퇴" right={<Chevron />} onClick={() => setWithdrawModal(true)} />
+          <Row label="로그아웃" right={<Chevron />} onClick={() => setLogoutModal(true)} />
         </div>
       </div>
 
       <TabBar />
+
+      {/* ---- 로그아웃 모달 ---- */}
+      <Modal
+        open={logoutModal}
+        title="로그아웃"
+        description="정말 로그아웃 하시겠습니까?"
+        cancelText="취소"
+        confirmText="로그아웃"
+        confirmDanger
+        onCancel={() => setLogoutModal(false)}
+        onConfirm={handleLogout}
+      />
+
+      {/* ---- 회원탈퇴 모달 ---- */}
+      <Modal
+        open={withdrawModal}
+        title="회원 탈퇴"
+        description={"정말로 탈퇴하시겠습니까?\n탈퇴 시 모든 데이터가 삭제되며\n복구가 불가능합니다."}
+        cancelText="취소"
+        confirmText="탈퇴하기"
+        confirmDanger
+        onCancel={() => setWithdrawModal(false)}
+        onConfirm={handleWithdraw}
+      />
     </div>
   );
 };

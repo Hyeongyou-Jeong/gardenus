@@ -7,6 +7,8 @@ interface ModalProps {
   description?: string;
   cancelText?: string;
   confirmText?: string;
+  /** true이면 확인 버튼이 빨간색(위험 액션)으로 표시 */
+  confirmDanger?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
   children?: React.ReactNode;
@@ -18,6 +20,7 @@ export const Modal: React.FC<ModalProps> = ({
   description,
   cancelText = "취소",
   confirmText = "확인",
+  confirmDanger = false,
   onCancel,
   onConfirm,
   children,
@@ -34,7 +37,13 @@ export const Modal: React.FC<ModalProps> = ({
           <button style={styles.cancelBtn} onClick={onCancel}>
             {cancelText}
           </button>
-          <button style={styles.confirmBtn} onClick={onConfirm}>
+          <button
+            style={{
+              ...styles.confirmBtn,
+              ...(confirmDanger ? { background: color.danger } : {}),
+            }}
+            onClick={onConfirm}
+          >
             {confirmText}
           </button>
         </div>

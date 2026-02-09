@@ -212,13 +212,10 @@ export const MatchHallPage: React.FC = () => {
           <p style={styles.businessRow}>상호명: 더가든</p>
           <p style={styles.businessRow}>대표자: 이정훈</p>
           <p style={styles.businessRow}>사업자등록번호: 702-07-02549</p>
-          <p style={styles.businessRow}>
-            통신판매업신고번호: 2023-서울성동-1168
-          </p>
-          <p style={styles.businessRow}>
-            주소: 서울특별시 성동구 왕십리로80(성수동1가, 동아아파트)
-          </p>
+          <p style={styles.businessRow}>통신판매업신고번호: 2023-서울성동-1168</p>
+          <p style={styles.businessRow}>주소: 서울특별시 성동구 왕십리로80(성수동1가, 동아아파트)</p>
           <p style={styles.businessRow}>고객센터: 031-282-2449</p>
+          <p style={styles.businessRow}>이메일: jeonghun2410@gmail.com</p>
         </div>
       </div>
 
@@ -243,7 +240,7 @@ export const MatchHallPage: React.FC = () => {
       <Modal
         open={matchModal}
         title="매칭 요청"
-        description={`${current?.name || "상대"}님에게 매칭을 요청할까요?`}
+        description={`${current?.name || "상대"}님에게 매칭을 요청하시겠습니까?`}
         cancelText="취소"
         confirmText="요청하기"
         onCancel={() => setMatchModal(false)}
@@ -251,16 +248,17 @@ export const MatchHallPage: React.FC = () => {
           setMatchModal(false);
         }}
       >
+        <p style={styles.refundNotice}>
+          요청이 거절되면 100% 환급됩니다.
+        </p>
         <div style={styles.flowerInfo}>
           <div style={styles.flowerRow}>
-            <span style={styles.flowerLabel}>보유 플라워</span>
-            <span style={styles.flowerValue}>9,640</span>
+            <span style={styles.flowerLabel}>보유 플라워:</span>
+            <span style={styles.flowerValue}>🌻 9640</span>
           </div>
           <div style={styles.flowerRow}>
-            <span style={styles.flowerLabel}>소모 플라워</span>
-            <span style={{ ...styles.flowerValue, color: color.danger }}>
-              -500
-            </span>
+            <span style={styles.flowerLabel}>소모 플라워:</span>
+            <span style={styles.flowerValue}>🌻 180</span>
           </div>
         </div>
       </Modal>
@@ -460,25 +458,30 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 2,
   },
 
-  /* ---- 모달 내 플라워 ---- */
+  /* ---- 모달 내 매칭 요청 ---- */
+  refundNotice: {
+    ...typo.body,
+    color: color.mint600,
+    fontWeight: 600,
+    marginBottom: 16,
+  },
   flowerInfo: {
-    background: color.gray50,
-    borderRadius: radius.md,
-    padding: "12px 16px",
-    marginTop: 8,
+    textAlign: "left" as const,
     marginBottom: 4,
   },
   flowerRow: {
     display: "flex",
-    justifyContent: "space-between",
-    padding: "4px 0",
+    alignItems: "center",
+    gap: 8,
+    padding: "3px 0",
   },
   flowerLabel: {
     ...typo.body,
     color: color.gray600,
   },
   flowerValue: {
-    ...typo.subheading,
+    ...typo.body,
     color: color.gray900,
+    fontWeight: 600,
   },
 };
