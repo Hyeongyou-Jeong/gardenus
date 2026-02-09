@@ -1,0 +1,74 @@
+/* ===== Gardenus Global Styles ===== */
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  font-family: "Noto Sans KR", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #212121;
+  background-color: #fafafa;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  max-width: 430px;
+  margin: 0 auto;
+  position: relative;
+  background: #ffffff;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+button {
+  border: none;
+  outline: none;
+  cursor: pointer;
+  background: transparent;
+  font-family: inherit;
+}
+
+input {
+  border: none;
+  outline: none;
+  font-family: inherit;
+}
+
+ul,
+ol {
+  list-style: none;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+/* 스크롤바 숨김 (모바일 느낌) */
+#root::-webkit-scrollbar {
+  display: none;
+}
+#root {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* MBTI 스크롤 트랙 스크롤바 숨김 */
+.mbti-scroll-track::-webkit-scrollbar {
+  display: none;
+}
