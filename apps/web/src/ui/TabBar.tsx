@@ -10,7 +10,7 @@ interface TabItem {
 
 const tabs: TabItem[] = [
   { path: "/", label: "홈", icon: "🏠" },
-  { path: "/discover", label: "탐색", icon: "🔍" },
+  { path: "/community", label: "커뮤니티", icon: "🔍" },
   { path: "/chat", label: "채팅", icon: "💬" },
   { path: "/like", label: "좋아요", icon: "💚" },
   { path: "/me", label: "MY", icon: "👤" },

@@ -35,6 +35,16 @@ const InquiryPage = lazy(() =>
     default: m.InquiryPage,
   }))
 );
+const CommunityPage = lazy(() =>
+  import("@/pages/CommunityPage").then((m) => ({
+    default: m.CommunityPage,
+  }))
+);
+const LikePage = lazy(() =>
+  import("@/pages/LikePage").then((m) => ({
+    default: m.LikePage,
+  }))
+);
 
 /* ---- Error Boundary ---- */
 class ErrorBoundary extends React.Component<
@@ -106,9 +116,9 @@ const App: React.FC = () => {
               <Route path="/me/edit" element={<EditProfilePage />} />
               <Route path="/select" element={<SelectionPage />} />
               <Route path="/inquiry" element={<InquiryPage />} />
-              <Route path="/discover" element={<PlaceholderPage />} />
+              <Route path="/community" element={<CommunityPage />} />
               <Route path="/chat" element={<PlaceholderPage />} />
-              <Route path="/like" element={<PlaceholderPage />} />
+              <Route path="/like" element={<LikePage />} />
             </Routes>
           </Suspense>
         </BrowserRouter>
