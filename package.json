@@ -1,0 +1,8 @@
+{
+  "name": "gardenus",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}

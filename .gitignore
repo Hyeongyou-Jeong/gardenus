@@ -5,6 +5,7 @@ Thumbs.db
 # Node / Web
 node_modules/
 .next/
+.vite/
 dist/
 build/
 *.log
@@ -21,6 +22,10 @@ ios/Pods/
 ios/.symlinks/
 ios/Flutter/Generated.xcconfig
 ios/Flutter/Flutter.podspec
+
+# Env
+.env
+.env.local
 
 # IDE
 .vscode/
