@@ -4,5 +4,8 @@
   "workspaces": [
     "apps/*",
     "packages/*"
-  ]
+  ],
+  "libc": ["glibc"],
+  "os": ["win32", "linux"],
+  "cpu": ["x64"]
 }
