@@ -159,7 +159,7 @@ export const MatchHallPage: React.FC = () => {
     }
 
     setImgUrl(null); // 로딩 중에는 placeholder
-    getFlowerProfileUrl(id).then((url) => {
+    getFlowerProfileUrl(id).then((url: string | null) => {
       if (!alive) return;
       if (url) imgCache.set(id, url);
       setImgUrl(url);
