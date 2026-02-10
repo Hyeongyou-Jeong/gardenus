@@ -45,6 +45,11 @@ const LikePage = lazy(() =>
     default: m.LikePage,
   }))
 );
+const FlowerStorePage = lazy(() =>
+  import("@/pages/FlowerStorePage").then((m) => ({
+    default: m.FlowerStorePage,
+  }))
+);
 
 /* ---- Error Boundary ---- */
 class ErrorBoundary extends React.Component<
@@ -119,6 +124,7 @@ const App: React.FC = () => {
               <Route path="/community" element={<CommunityPage />} />
               <Route path="/chat" element={<PlaceholderPage />} />
               <Route path="/like" element={<LikePage />} />
+              <Route path="/store/flowers" element={<FlowerStorePage />} />
             </Routes>
           </Suspense>
         </BrowserRouter>

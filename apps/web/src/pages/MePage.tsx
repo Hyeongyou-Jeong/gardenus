@@ -2,8 +2,8 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
 import { Header, TabBar, Modal } from "@/ui";
-import { fetchMyProfile } from "@/domains/profile/profile.repo";
-import type { UserProfile } from "@/domains/profile/profile.types";
+import { fetchUser, type UserDoc } from "@/domains/user/user.repo";
+import { useMyFlower } from "@/shared/hooks/useMyFlower";
 import { color, radius, typo } from "@gardenus/shared";
 
 /* ---------- Toggle Component ---------- */
@@ -67,9 +67,10 @@ const Row: React.FC<{
 /* ========== MePage ========== */
 export const MePage: React.FC = () => {
   const navigate = useNavigate();
-  const { isAuthed, phone, userId, authLoading, logout } = useAuth();
+  const { isAuthed, phone, authLoading, logout } = useAuth();
+  const { flower } = useMyFlower();
 
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [profile, setProfile] = useState<UserDoc | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
 
   const [toggleBenefit, setToggleBenefit] = useState(true);
@@ -88,11 +89,11 @@ export const MePage: React.FC = () => {
 
   /* ---- 내 프로필 로드 ---- */
   useEffect(() => {
-    if (!userId) return;
+    if (!phone) return;
     let alive = true;
 
     setProfileLoading(true);
-    fetchMyProfile(userId)
+    fetchUser(phone)
       .then((p) => {
         if (alive) setProfile(p);
       })
@@ -104,7 +105,7 @@ export const MePage: React.FC = () => {
     return () => {
       alive = false;
     };
-  }, [userId]);
+  }, [phone]);
 
   const handleLogout = () => {
     setLogoutModal(false);
@@ -197,11 +198,12 @@ export const MePage: React.FC = () => {
             right={
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{ ...typo.subheading, color: color.mint600 }}>
-                  {profile?.flower ?? 0}
+                  {flower.toLocaleString()}
                 </span>
                 <Chevron />
               </div>
             }
+            onClick={() => navigate("/store/flowers")}
           />
           <Row
             label="매칭 받기"

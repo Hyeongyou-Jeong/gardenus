@@ -1,11 +1,14 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
 import { Modal, TabBar } from "@/ui";
 import { color, radius, shadow, typo, calcAge } from "@gardenus/shared";
-import { fetchUserProfiles } from "@/domains/profile/profile.repo";
+import { fetchUser, type UserDoc } from "@/domains/user/user.repo";
+import { fetchCandidateBatch } from "@/domains/match/candidate.repo";
 import { getFlowerProfileUrl } from "@/infra/firebase/storage";
-import type { UserProfile } from "@/domains/profile/profile.types";
+import { createMatchRequest, FLOWER_COST } from "@/domains/matchRequest/matchRequest.repo";
+import { useMyFlower } from "@/shared/hooks/useMyFlower";
+import { shuffle } from "@/shared/utils/shuffle";
 
 /* ---- Storage URL 캐시 (모듈 스코프, 동일 id 재요청 방지) ---- */
 const imgCache = new Map<string, string>();
@@ -16,9 +19,9 @@ const imgCache = new Map<string, string>();
 
 export const MatchHallPage: React.FC = () => {
   const navigate = useNavigate();
-  const { isAuthed } = useAuth();
+  const { isAuthed, phone } = useAuth();
 
-  const [profiles, setProfiles] = useState<UserProfile[]>([]);
+  const [profiles, setProfiles] = useState<UserDoc[]>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -26,34 +29,110 @@ export const MatchHallPage: React.FC = () => {
   const [matchModal, setMatchModal] = useState(false);
   const [imgUrl, setImgUrl] = useState<string | null>(null);
   const [imgFailed, setImgFailed] = useState(false);
+  const { flower: myFlower } = useMyFlower();
+  const [requesting, setRequesting] = useState(false);
 
-  /* ---- Firestore에서 유저 로드 ---- */
+  /* ---- 중복 방지 & prefetch 상태 ---- */
+  const seenIds = useRef(new Set<string>());
+  const fetchingRef = useRef(false);
+  const myGenderRef = useRef<boolean | null>(null);
+
+  const BATCH_SIZE = 50;
+  const PREFETCH_THRESHOLD = 10;
+
+  /** 배치를 가져와서 seenIds 필터 + shuffle 후 반환 */
+  const loadBatch = useCallback(async (myGender: boolean): Promise<UserDoc[]> => {
+    const raw = await fetchCandidateBatch({ myGender, limitN: BATCH_SIZE });
+    const fresh = raw.filter((u) => {
+      if (u.id === phone) return false;
+      if (seenIds.current.has(u.id)) return false;
+      seenIds.current.add(u.id);
+      return true;
+    });
+    return shuffle(fresh);
+  }, [phone]);
+
+  /* ---- 내 성별 조회 → 최초 후보 로드 ---- */
   useEffect(() => {
+    if (!phone) {
+      setLoading(false);
+      return;
+    }
+
+    let alive = true;
     setLoading(true);
-    fetchUserProfiles(30)
-      .then((data) => {
-        console.log("[users loaded]", data.length, data[0]);
-        setProfiles(data);
+
+    (async () => {
+      try {
+        const me = await fetchUser(phone);
+        if (!alive) return;
+
+        if (me?.gender == null) {
+          setError("프로필에서 성별을 먼저 설정해주세요.");
+          setLoading(false);
+          return;
+        }
+        myGenderRef.current = me.gender;
+
+        const candidates = await loadBatch(me.gender);
+        if (!alive) return;
+
+        setProfiles(candidates);
         setCurrentIdx(0);
         setError(null);
-      })
-      .catch((err) => {
-        console.error("[users load error]", err);
+      } catch (err) {
+        if (!alive) return;
+        console.error("[MatchHall] load error", err);
         setError("프로필을 불러오지 못했습니다.");
-      })
-      .finally(() => setLoading(false));
-  }, []);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+
+    return () => { alive = false; };
+  }, [phone, loadBatch]);
+
+  /* ---- 추가 배치 프리페치 ---- */
+  const prefetch = useCallback(async () => {
+    if (fetchingRef.current || myGenderRef.current == null) return;
+    fetchingRef.current = true;
+
+    try {
+      const fresh = await loadBatch(myGenderRef.current);
+      if (fresh.length > 0) {
+        setProfiles((prev) => [...prev, ...fresh]);
+      }
+    } catch (err) {
+      console.error("[MatchHall] prefetch error", err);
+    } finally {
+      fetchingRef.current = false;
+    }
+  }, [loadBatch]);
 
   /* ---- 현재 프로필 ---- */
-  const current: UserProfile | undefined =
-    profiles.length > 0
-      ? profiles[currentIdx % profiles.length]
+  const current: UserDoc | undefined =
+    profiles.length > 0 && currentIdx < profiles.length
+      ? profiles[currentIdx]
       : undefined;
 
   /* ---- 액션 ---- */
   const handleNext = () => {
     if (profiles.length === 0) return;
-    setCurrentIdx((i) => (i + 1) % profiles.length);
+    const nextIdx = currentIdx + 1;
+
+    if (nextIdx >= profiles.length) {
+      // 끝까지 봤으면 처음으로
+      setCurrentIdx(0);
+      return;
+    }
+
+    setCurrentIdx(nextIdx);
+
+    // 남은 카드가 threshold 이하이면 미리 가져오기
+    const remaining = profiles.length - nextIdx;
+    if (remaining <= PREFETCH_THRESHOLD) {
+      prefetch();
+    }
   };
 
   const handleHeart = () => {
@@ -93,7 +172,7 @@ export const MatchHallPage: React.FC = () => {
 
   /* ---- 파생 데이터 (current 기반) ---- */
   const showImg = !!imgUrl && !imgFailed;
-  const age = current ? calcAge(current.born) : null;
+  const age = current?.born ? calcAge(Number(current.born)) : null;
   const chips = current
     ? [current.mbti, current.department, current.cigar]
         .filter((v): v is string => !!v && String(v).trim() !== "")
@@ -242,10 +321,25 @@ export const MatchHallPage: React.FC = () => {
         title="매칭 요청"
         description={`${current?.name || "상대"}님에게 매칭을 요청하시겠습니까?`}
         cancelText="취소"
-        confirmText="요청하기"
+        confirmText={requesting ? "요청 중…" : "요청하기"}
         onCancel={() => setMatchModal(false)}
-        onConfirm={() => {
-          setMatchModal(false);
+        onConfirm={async () => {
+          if (requesting || !phone || !current?.id) return;
+          setRequesting(true);
+          try {
+            const result = await createMatchRequest(phone, current.id);
+            setMatchModal(false);
+            if (result.success) {
+              alert("요청을 보냈습니다.");
+            } else {
+              alert(result.message);
+            }
+          } catch (err) {
+            setMatchModal(false);
+            alert("요청에 실패했습니다. 다시 시도해주세요.");
+          } finally {
+            setRequesting(false);
+          }
         }}
       >
         <p style={styles.refundNotice}>
@@ -254,11 +348,11 @@ export const MatchHallPage: React.FC = () => {
         <div style={styles.flowerInfo}>
           <div style={styles.flowerRow}>
             <span style={styles.flowerLabel}>보유 플라워:</span>
-            <span style={styles.flowerValue}>🌻 9640</span>
+            <span style={styles.flowerValue}>🌻 {myFlower.toLocaleString()}</span>
           </div>
           <div style={styles.flowerRow}>
             <span style={styles.flowerLabel}>소모 플라워:</span>
-            <span style={styles.flowerValue}>🌻 180</span>
+            <span style={styles.flowerValue}>🌻 {FLOWER_COST}</span>
           </div>
         </div>
       </Modal>

@@ -3,9 +3,9 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
 import { Header, Button } from "@/ui";
 import {
-  fetchMyProfile,
-  upsertMyProfile,
-} from "@/domains/profile/profile.repo";
+  fetchUser,
+  upsertUser,
+} from "@/domains/user/user.repo";
 import { color, radius, shadow, typo } from "@gardenus/shared";
 
 /* ================================================================
@@ -30,8 +30,8 @@ const PREF_LABELS: Record<string, string> = {
   meetingPref: "선호만남유형",
 };
 
-/** MBTI 문자열 → 4축 기본값 (E=25, I=75 등) */
-function mbtiStringToAxes(mbti?: string) {
+/** MBTI 문자열 → 슬라이더 기본값 (0~100, 50=중앙) */
+function mbtiStringToSliders(mbti?: string) {
   const m = (mbti ?? "").toUpperCase();
   return {
     ei: m.includes("I") ? 75 : 25,
@@ -41,14 +41,55 @@ function mbtiStringToAxes(mbti?: string) {
   };
 }
 
-/** 4축 → MBTI 문자열 */
-function axesToMbtiString(ei: number, sn: number, tf: number, jp: number) {
+/** 슬라이더(0~100) → MBTI 문자열 */
+function slidersToMbtiString(ei: number, sn: number, tf: number, jp: number) {
   return (
     (ei < 50 ? "E" : "I") +
     (sn < 50 ? "S" : "N") +
     (tf < 50 ? "T" : "F") +
     (jp < 50 ? "J" : "P")
   );
+}
+
+/**
+ * DB mbtiPercentages (-100 ~ 100) → 슬라이더 (0 ~ 100)
+ *   -100(왼쪽극단) → 0,  0(중앙) → 50,  100(오른쪽극단) → 100
+ */
+function dbToSlider(dbVal: number): number {
+  return Math.round((dbVal + 100) / 2);
+}
+
+/**
+ * 슬라이더 (0 ~ 100) → DB mbtiPercentages (-100 ~ 100)
+ */
+function sliderToDb(sliderVal: number): number {
+  return Math.round(sliderVal * 2 - 100);
+}
+
+/* ---- 선호도: 숫자(DB) ↔ 문자열(UI) 매핑 ---- */
+
+/** DB 숫자 필드 → UI 선호도 키 매핑 */
+const NUM_PREF_MAP: Record<string, { dbField: string; options: string[] }> = {
+  contactPref: { dbField: "call", options: ["상관없음", "전화", "카카오톡"] },
+  drinking: { dbField: "forDate", options: ["거의 안먹음", "가끔", "자주", "매우 자주"] },
+  affectionLevel: { dbField: "cute", options: ["높은", "중간", "낮은"] },
+  jealousyLevel: { dbField: "jealousy", options: ["높은", "중간", "낮은"] },
+  meetingPref: { dbField: "date", options: ["상관없음", "데이트", "소개팅"] },
+};
+
+/** DB 숫자 → UI 문자열 */
+function dbNumToPrefString(dbField: string, dbValue: number): string | undefined {
+  const entry = Object.values(NUM_PREF_MAP).find((e) => e.dbField === dbField);
+  if (!entry) return undefined;
+  return entry.options[dbValue] ?? entry.options[0];
+}
+
+/** UI 선호도 키 + 문자열 → DB 숫자 */
+function prefStringToDbNum(prefKey: string, value: string): number {
+  const entry = NUM_PREF_MAP[prefKey];
+  if (!entry) return 0;
+  const idx = entry.options.indexOf(value);
+  return idx >= 0 ? idx : 0;
 }
 
 /* ================================================================
@@ -200,8 +241,7 @@ const MbtiSlider: React.FC<{
   }, []);
 
   const leftActive = value < 50;
-  const pct = leftActive ? 100 - value : value;
-  const displayPct = Math.round(pct * 2 > 100 ? 100 : pct * 2);
+  const displayPct = Math.round(Math.abs(value - 50) * 2);
 
   return (
     <div style={mbtiStyles.row}>
@@ -348,97 +388,51 @@ const mbtiStyles: Record<string, React.CSSProperties> = {
 export const EditProfilePage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { isAuthed, userId, authLoading } = useAuth();
+  const { isAuthed, phone, authLoading } = useAuth();
 
   /* 접근 제어 */
   useEffect(() => {
     if (!authLoading && !isAuthed) navigate("/login", { replace: true });
   }, [authLoading, isAuthed, navigate]);
 
-  /* ---- 폼 상태 ---- */
-  const [name, setName] = useState("");
-  const [gender, setGender] = useState<boolean | null>(null); // true=남, false=여
-  const [born, setBorn] = useState("");
-  const [height, setHeight] = useState("");
-  const [residence, setResidence] = useState("");
-  const [job, setJob] = useState("");
-  const [school, setSchool] = useState("");
-  const [department, setDepartment] = useState("");
-  const [aboutme, setAboutme] = useState("");
-  const [profileImageId, setProfileImageId] = useState("1");
-
-  /* MBTI 축 (0=왼 극단, 100=오른 극단) */
-  const [ei, setEi] = useState(50);
-  const [sn, setSn] = useState(50);
-  const [tf, setTf] = useState(50);
-  const [jp, setJp] = useState(50);
-
-  /* 내특징 / 관심사 / 이상형 */
-  const [myTraits, setMyTraits] = useState<string[]>([]);
-  const [interests, setInterests] = useState<string[]>([]);
-  const [idealTraits, setIdealTraits] = useState<string[]>([]);
-
-  /* 선호도 */
-  const [prefs, setPrefs] = useState<Record<string, string>>({
-    contactPref: "상관없음",
-    cigar: "비흡연",
-    drinking: "거의 안먹음",
-    affectionLevel: "중간",
-    jealousyLevel: "낮은",
-    meetingPref: "상관없음",
-  });
-
+  /* ==================================================================
+     버퍼: DB 문서 구조(UserDoc)를 그대로 들고 있는 단일 상태
+     - 1단계: fetchUser → 버퍼에 저장
+     - 2단계: 유저가 폼 변경 → set()으로 버퍼 업데이트
+     - 3단계: 저장 버튼 → upsertUser(uid, buffer)
+     ================================================================== */
+  const [buffer, setBuffer] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  /* ---- 기존 프로필 로드 ---- */
+  /** 버퍼 필드 부분 업데이트 (여러 필드를 한번에 가능) */
+  const set = useCallback((patch: Record<string, any>) => {
+    setBuffer((prev) => ({ ...prev, ...patch }));
+  }, []);
+
+  /* ---- 1단계: 페이지 진입 시 DB → 버퍼 ---- */
   useEffect(() => {
-    if (!userId) return;
+    if (!phone) return;
     let alive = true;
+    fetchUser(phone)
+      .then((doc) => {
+        if (!alive) return;
+        if (doc) {
+          const { id, ...data } = doc;
+          // mbtiPercentages가 없고 mbti 문자열만 있으면 추정해서 채움
+          if (!data.mbtiPercentages && data.mbti) {
+            const axes = mbtiStringToSliders(data.mbti);
+            data.mbtiPercentages = {
+              EI: sliderToDb(axes.ei),
+              SN: sliderToDb(axes.sn),
+              TF: sliderToDb(axes.tf),
+              JP: sliderToDb(axes.jp),
+            };
+          }
 
-    fetchMyProfile(userId)
-      .then((p) => {
-        if (!alive || !p) return;
-        setName(p.name ?? "");
-        if (p.gender != null) setGender(p.gender);
-        setBorn(p.born != null ? String(p.born) : "");
-        setHeight(p.height != null ? String(p.height) : "");
-        setResidence(p.residence ?? "");
-        setJob(p.job ?? "");
-        setSchool(p.school ?? "");
-        setDepartment(p.department ?? "");
-        setAboutme(p.aboutme ?? "");
-        setProfileImageId(p.profileImageId ?? "1");
-
-        // MBTI 축
-        if (p.mbtiEI != null) setEi(p.mbtiEI);
-        else if (p.mbti) {
-          const axes = mbtiStringToAxes(p.mbti);
-          setEi(axes.ei);
-          setSn(axes.sn);
-          setTf(axes.tf);
-          setJp(axes.jp);
+          setBuffer(data);
         }
-        if (p.mbtiSN != null) setSn(p.mbtiSN);
-        if (p.mbtiTF != null) setTf(p.mbtiTF);
-        if (p.mbtiJP != null) setJp(p.mbtiJP);
-
-        // 선호도
-        setPrefs((prev) => ({
-          ...prev,
-          ...(p.contactPref ? { contactPref: p.contactPref } : {}),
-          ...(p.cigar ? { cigar: p.cigar } : {}),
-          ...(p.drinking ? { drinking: p.drinking } : {}),
-          ...(p.affectionLevel ? { affectionLevel: p.affectionLevel } : {}),
-          ...(p.jealousyLevel ? { jealousyLevel: p.jealousyLevel } : {}),
-          ...(p.meetingPref ? { meetingPref: p.meetingPref } : {}),
-        }));
-
-        // 태그 배열
-        if (p.myTraits) setMyTraits(p.myTraits);
-        if (p.interests) setInterests(p.interests);
-        if (p.idealTraits) setIdealTraits(p.idealTraits);
       })
       .catch((e) => console.error("[EditProfile] load failed", e))
       .finally(() => {
@@ -446,9 +440,9 @@ export const EditProfilePage: React.FC = () => {
       });
 
     return () => { alive = false; };
-  }, [userId]);
+  }, [phone]);
 
-  /* ---- SelectionPage에서 돌아올 때 URL params 처리 ---- */
+  /* ---- SelectionPage에서 돌아올 때 URL params → 버퍼 ---- */
   const selectionHandled = useRef(false);
   useEffect(() => {
     if (selectionHandled.current) return;
@@ -459,62 +453,77 @@ export const EditProfilePage: React.FC = () => {
     selectionHandled.current = true;
     try {
       const values = JSON.parse(decodeURIComponent(valuesRaw)) as string[];
-      if (field === "myTraits") setMyTraits(values);
-      else if (field === "interests") setInterests(values);
-      else if (field === "idealTraits") setIdealTraits(values);
+      // URL의 field 이름 → DB 필드 이름으로 매핑하여 버퍼 업데이트
+      if (field === "myTraits") set({ features: values });
+      else if (field === "interests") set({ interests: values });
+      else if (field === "idealTraits") set({ idealType: values });
     } catch { /* ignore */ }
 
-    // URL 정리
     searchParams.delete("field");
     searchParams.delete("values");
     setSearchParams(searchParams, { replace: true });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ---- 선호도 순환 ---- */
-  const cyclePref = (key: string) => {
-    const opts = PREF_OPTIONS[key];
-    if (!opts) return;
-    const idx = opts.indexOf(prefs[key]);
-    const next = opts[(idx + 1) % opts.length];
-    setPrefs((prev) => ({ ...prev, [key]: next }));
+  /* ---- 2단계 헬퍼: MBTI 슬라이더 (UI 0~100 ↔ DB -100~100) ---- */
+  const getMbtiSlider = (axis: "EI" | "SN" | "TF" | "JP"): number =>
+    dbToSlider(buffer.mbtiPercentages?.[axis] ?? 0);
+
+  const setMbtiSlider = (axis: "EI" | "SN" | "TF" | "JP", sliderVal: number) => {
+    const current = buffer.mbtiPercentages ?? { EI: 0, SN: 0, TF: 0, JP: 0 };
+    const updated = { ...current, [axis]: sliderToDb(sliderVal) };
+    set({
+      mbtiPercentages: updated,
+      mbti: slidersToMbtiString(
+        dbToSlider(updated.EI),
+        dbToSlider(updated.SN),
+        dbToSlider(updated.TF),
+        dbToSlider(updated.JP),
+      ),
+    });
   };
 
-  /* ---- 저장 ---- */
+  /* ---- 2단계 헬퍼: 선호도 (UI 문자열 ↔ DB 숫자) ---- */
+  const getPref = (prefKey: string): string => {
+    if (prefKey === "cigar") return buffer.cigar ?? "비흡연";
+    const entry = NUM_PREF_MAP[prefKey];
+    if (!entry) return "";
+    const dbVal = buffer[entry.dbField] ?? 0;
+    return entry.options[dbVal] ?? entry.options[0];
+  };
+
+  const cyclePref = (prefKey: string) => {
+    if (prefKey === "cigar") {
+      const opts = PREF_OPTIONS.cigar;
+      const idx = opts.indexOf(buffer.cigar ?? "비흡연");
+      set({ cigar: opts[(idx + 1) % opts.length] });
+      return;
+    }
+    const entry = NUM_PREF_MAP[prefKey];
+    if (!entry) return;
+    const current = (buffer[entry.dbField] as number) ?? 0;
+    set({ [entry.dbField]: (current + 1) % entry.options.length });
+  };
+
+  /* ---- 3단계: 저장 버튼 → 버퍼를 그대로 DB에 쓰기 ---- */
   const handleSave = async () => {
-    const trimmedName = name.trim();
-    if (!trimmedName) {
+    if (!(buffer.name ?? "").trim()) {
       setError("이름을 입력해주세요.");
       return;
     }
-    if (!userId) return;
+    if (!phone) return;
 
     setSaving(true);
     setError("");
 
     try {
-      const bornNum = parseInt(born, 10);
-      const heightNum = parseInt(height, 10);
-      await upsertMyProfile(userId, {
-        name: trimmedName,
-        gender: gender ?? undefined,
-        born: Number.isNaN(bornNum) ? undefined : bornNum,
+      // height는 문자열로 입력받지만 DB엔 숫자로 저장
+      const heightNum = parseInt(String(buffer.height ?? ""), 10);
+      const saveData = {
+        ...buffer,
+        name: (buffer.name ?? "").trim(),
         height: Number.isNaN(heightNum) ? undefined : heightNum,
-        residence: residence.trim() || undefined,
-        job: job.trim() || undefined,
-        school: school.trim() || undefined,
-        department: department.trim() || undefined,
-        aboutme: aboutme.trim() || undefined,
-        profileImageId: profileImageId || undefined,
-        mbti: axesToMbtiString(ei, sn, tf, jp),
-        mbtiEI: ei,
-        mbtiSN: sn,
-        mbtiTF: tf,
-        mbtiJP: jp,
-        myTraits,
-        interests,
-        idealTraits,
-        ...prefs,
-      });
+      };
+      await upsertUser(phone, saveData);
       navigate("/me");
     } catch (err: any) {
       console.error("[EditProfile] save failed", err);
@@ -555,8 +564,8 @@ export const EditProfilePage: React.FC = () => {
               <input
                 type="text"
                 placeholder="이름을 입력해주세요"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                value={buffer.name ?? ""}
+                onChange={(e) => set({ name: e.target.value })}
                 style={s.nameInput}
               />
             </div>
@@ -574,12 +583,12 @@ export const EditProfilePage: React.FC = () => {
               {[true, false].map((g) => (
                 <button
                   key={String(g)}
-                  onClick={() => setGender(g)}
+                  onClick={() => set({ gender: g })}
                   style={{
                     ...s.genderBtn,
-                    borderColor: gender === g ? color.mint500 : color.gray300,
-                    color: gender === g ? color.mint600 : color.gray400,
-                    background: gender === g ? color.mint50 : color.white,
+                    borderColor: buffer.gender === g ? color.mint500 : color.gray300,
+                    color: buffer.gender === g ? color.mint600 : color.gray400,
+                    background: buffer.gender === g ? color.mint50 : color.white,
                   }}
                 >
                   {g ? "남자" : "여자"}
@@ -590,16 +599,16 @@ export const EditProfilePage: React.FC = () => {
 
           {/* 2열 정보 그리드 */}
           <div style={s.infoGrid}>
-            <InfoField icon={<IcCrown />} label="출생연도" value={born} placeholder="예: 1998" suffix="년" onChange={setBorn} inputMode="numeric" />
-            <InfoField icon={<IcHeight />} label="키" value={height} placeholder="예: 174" suffix="cm" onChange={setHeight} inputMode="numeric" />
+            <InfoField icon={<IcCrown />} label="출생연도" value={buffer.born ?? ""} placeholder="예: 1998" suffix="년" onChange={(v) => set({ born: v })} inputMode="numeric" />
+            <InfoField icon={<IcHeight />} label="키" value={buffer.height != null ? String(buffer.height) : ""} placeholder="예: 174" suffix="cm" onChange={(v) => set({ height: v })} inputMode="numeric" />
           </div>
           <div style={s.infoGrid}>
-            <InfoField icon={<IcPin />} label="거주지" value={residence} placeholder="예: 서울 북부" onChange={setResidence} />
-            <InfoField icon={<IcBriefcase />} label="직업" value={job} placeholder="직업 입력" onChange={setJob} />
+            <InfoField icon={<IcPin />} label="거주지" value={buffer.residence ?? ""} placeholder="예: 서울 북부" onChange={(v) => set({ residence: v })} />
+            <InfoField icon={<IcBriefcase />} label="직업" value={buffer.job ?? ""} placeholder="직업 입력" onChange={(v) => set({ job: v })} />
           </div>
           <div style={s.infoGrid}>
-            <InfoField icon={<IcSchool />} label="대학교" value={school} placeholder="학교명" onChange={setSchool} />
-            <InfoField icon={<IcDoc />} label="전공" value={department} placeholder="전공 입력" onChange={setDepartment} />
+            <InfoField icon={<IcSchool />} label="대학교" value={buffer.school ?? ""} placeholder="학교명" onChange={(v) => set({ school: v })} />
+            <InfoField icon={<IcDoc />} label="전공" value={buffer.department ?? ""} placeholder="전공 입력" onChange={(v) => set({ department: v })} />
           </div>
 
           {/* 자기소개 */}
@@ -611,12 +620,12 @@ export const EditProfilePage: React.FC = () => {
             <div style={s.textareaWrap}>
               <textarea
                 placeholder="자신에 대해 적어주세요! (최소10자)"
-                value={aboutme}
-                onChange={(e) => setAboutme(e.target.value)}
+                value={buffer.aboutme ?? ""}
+                onChange={(e) => set({ aboutme: e.target.value })}
                 rows={4}
                 style={s.textarea}
               />
-              <span style={s.charCount}>{aboutme.length}자</span>
+              <span style={s.charCount}>{(buffer.aboutme ?? "").length}자</span>
             </div>
           </div>
         </div>
@@ -624,10 +633,10 @@ export const EditProfilePage: React.FC = () => {
         {/* ==================== 카드 2: MBTI ==================== */}
         <div style={s.card}>
           <p style={s.cardTitle}>MBTI</p>
-          <MbtiSlider leftLabel="E" leftSub="외향형" rightLabel="I" rightSub="내향형" value={ei} onChange={setEi} />
-          <MbtiSlider leftLabel="S" leftSub="감각형" rightLabel="N" rightSub="직관형" value={sn} onChange={setSn} />
-          <MbtiSlider leftLabel="T" leftSub="사고형" rightLabel="F" rightSub="감정형" value={tf} onChange={setTf} />
-          <MbtiSlider leftLabel="J" leftSub="판단형" rightLabel="P" rightSub="인식형" value={jp} onChange={setJp} />
+          <MbtiSlider leftLabel="E" leftSub="외향형" rightLabel="I" rightSub="내향형" value={getMbtiSlider("EI")} onChange={(v) => setMbtiSlider("EI", v)} />
+          <MbtiSlider leftLabel="S" leftSub="감각형" rightLabel="N" rightSub="직관형" value={getMbtiSlider("SN")} onChange={(v) => setMbtiSlider("SN", v)} />
+          <MbtiSlider leftLabel="T" leftSub="사고형" rightLabel="F" rightSub="감정형" value={getMbtiSlider("TF")} onChange={(v) => setMbtiSlider("TF", v)} />
+          <MbtiSlider leftLabel="J" leftSub="판단형" rightLabel="P" rightSub="인식형" value={getMbtiSlider("JP")} onChange={(v) => setMbtiSlider("JP", v)} />
         </div>
 
         {/* ==================== 카드 3: 내특징 / 관심사 / 이상형 ==================== */}
@@ -635,10 +644,10 @@ export const EditProfilePage: React.FC = () => {
           <TagRow
             icon={<IcPerson />}
             label="내특징"
-            sub={myTraits.length > 0 ? `${myTraits.length}개 선택됨` : "선택해주세요."}
+            sub={(buffer.features?.length ?? 0) > 0 ? `${buffer.features.length}개 선택됨` : "선택해주세요."}
             onClick={() =>
               navigate(
-                `/select?mode=traits&title=${encodeURIComponent("내특징 선택")}&field=myTraits&returnTo=/me/edit&current=${encodeURIComponent(JSON.stringify(myTraits))}`
+                `/select?mode=traits&title=${encodeURIComponent("내특징 선택")}&field=myTraits&returnTo=/me/edit&current=${encodeURIComponent(JSON.stringify(buffer.features ?? []))}`
               )
             }
           />
@@ -646,10 +655,10 @@ export const EditProfilePage: React.FC = () => {
           <TagRow
             icon={<IcSparkle />}
             label="관심사"
-            sub={interests.length > 0 ? `${interests.length}개 선택됨` : "선택해주세요."}
+            sub={(buffer.interests?.length ?? 0) > 0 ? `${buffer.interests.length}개 선택됨` : "선택해주세요."}
             onClick={() =>
               navigate(
-                `/select?mode=interests&title=${encodeURIComponent("관심사 선택")}&field=interests&returnTo=/me/edit&current=${encodeURIComponent(JSON.stringify(interests))}`
+                `/select?mode=interests&title=${encodeURIComponent("관심사 선택")}&field=interests&returnTo=/me/edit&current=${encodeURIComponent(JSON.stringify(buffer.interests ?? []))}`
               )
             }
           />
@@ -657,10 +666,10 @@ export const EditProfilePage: React.FC = () => {
           <TagRow
             icon={<IcHeart />}
             label="이상형"
-            sub={idealTraits.length > 0 ? `${idealTraits.length}개 선택됨` : "선택해주세요."}
+            sub={(buffer.idealType?.length ?? 0) > 0 ? `${buffer.idealType.length}개 선택됨` : "선택해주세요."}
             onClick={() =>
               navigate(
-                `/select?mode=ideal&title=${encodeURIComponent("이상형 선택")}&field=idealTraits&returnTo=/me/edit&current=${encodeURIComponent(JSON.stringify(idealTraits))}`
+                `/select?mode=ideal&title=${encodeURIComponent("이상형 선택")}&field=idealTraits&returnTo=/me/edit&current=${encodeURIComponent(JSON.stringify(buffer.idealType ?? []))}`
               )
             }
           />
@@ -673,7 +682,7 @@ export const EditProfilePage: React.FC = () => {
               <PrefCard
                 key={key}
                 label={PREF_LABELS[key]}
-                value={prefs[key]}
+                value={getPref(key)}
                 Icon={PREF_ICONS[key]}
                 onClick={() => cyclePref(key)}
               />
@@ -684,7 +693,7 @@ export const EditProfilePage: React.FC = () => {
               <PrefCard
                 key={key}
                 label={PREF_LABELS[key]}
-                value={prefs[key]}
+                value={getPref(key)}
                 Icon={PREF_ICONS[key]}
                 onClick={() => cyclePref(key)}
               />
