@@ -1,11 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
+import { useProfile } from "@/auth/ProfileContext";
 import { Header, Button } from "@/ui";
-import {
-  fetchUser,
-  upsertUser,
-} from "@/domains/user/user.repo";
+import { upsertMyProfile } from "@/domains/user/user.repo";
 import { color, radius, shadow, typo } from "@gardenus/shared";
 
 /* ================================================================
@@ -389,6 +387,7 @@ export const EditProfilePage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { isAuthed, phone, authLoading } = useAuth();
+  const { myProfile, profileLoading, patchProfile } = useProfile();
 
   /* 접근 제어 */
   useEffect(() => {
@@ -396,73 +395,94 @@ export const EditProfilePage: React.FC = () => {
   }, [authLoading, isAuthed, navigate]);
 
   /* ==================================================================
-     버퍼: DB 문서 구조(UserDoc)를 그대로 들고 있는 단일 상태
-     - 1단계: fetchUser → 버퍼에 저장
-     - 2단계: 유저가 폼 변경 → set()으로 버퍼 업데이트
-     - 3단계: 저장 버튼 → upsertUser(uid, buffer)
+     버퍼 (draft): 전역 프로필을 로컬에서 편집하는 단일 상태
+     - 진입 시 ProfileContext → buffer 복사 (1회)
+     - 선택 페이지 이동 시에만 sessionStorage에 임시 저장
+     - 저장 버튼 → 서버 반영 + 전역 프로필 갱신
+     - 뒤로가기 → 로컬 버퍼 버림 (전역 프로필 그대로)
      ================================================================== */
+  const SESSION_KEY = "editProfile_draft";
+
   const [buffer, setBuffer] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const initialized = useRef(false);
 
-  /** 버퍼 필드 부분 업데이트 (여러 필드를 한번에 가능) */
+  /** 버퍼 필드 부분 업데이트 (로컬만, 서버 접근 없음) */
   const set = useCallback((patch: Record<string, any>) => {
     setBuffer((prev) => ({ ...prev, ...patch }));
   }, []);
 
-  /* ---- 1단계: 페이지 진입 시 DB → 버퍼 ---- */
-  useEffect(() => {
-    if (!phone) return;
-    let alive = true;
-    fetchUser(phone)
-      .then((doc) => {
-        if (!alive) return;
-        if (doc) {
-          const { id, ...data } = doc;
-          // mbtiPercentages가 없고 mbti 문자열만 있으면 추정해서 채움
-          if (!data.mbtiPercentages && data.mbti) {
-            const axes = mbtiStringToSliders(data.mbti);
-            data.mbtiPercentages = {
-              EI: sliderToDb(axes.ei),
-              SN: sliderToDb(axes.sn),
-              TF: sliderToDb(axes.tf),
-              JP: sliderToDb(axes.jp),
-            };
-          }
+  /* ---- URL params에서 SelectionPage 결과 파싱 (동기) ---- */
+  const selectionPatch = useRef<Record<string, any> | null>(null);
+  const paramsHandled = useRef(false);
 
-          setBuffer(data);
-        }
-      })
-      .catch((e) => console.error("[EditProfile] load failed", e))
-      .finally(() => {
-        if (alive) setLoading(false);
-      });
-
-    return () => { alive = false; };
-  }, [phone]);
-
-  /* ---- SelectionPage에서 돌아올 때 URL params → 버퍼 ---- */
-  const selectionHandled = useRef(false);
-  useEffect(() => {
-    if (selectionHandled.current) return;
+  if (!paramsHandled.current) {
     const field = searchParams.get("field");
     const valuesRaw = searchParams.get("values");
-    if (!field || !valuesRaw) return;
+    if (field && valuesRaw) {
+      paramsHandled.current = true;
+      try {
+        const values = JSON.parse(decodeURIComponent(valuesRaw)) as string[];
+        if (field === "myTraits") selectionPatch.current = { features: values };
+        else if (field === "interests") selectionPatch.current = { interests: values };
+        else if (field === "idealTraits") selectionPatch.current = { idealType: values };
+      } catch { /* ignore */ }
+    }
+  }
 
-    selectionHandled.current = true;
-    try {
-      const values = JSON.parse(decodeURIComponent(valuesRaw)) as string[];
-      // URL의 field 이름 → DB 필드 이름으로 매핑하여 버퍼 업데이트
-      if (field === "myTraits") set({ features: values });
-      else if (field === "interests") set({ interests: values });
-      else if (field === "idealTraits") set({ idealType: values });
-    } catch { /* ignore */ }
+  /* ---- 초기 진입: sessionStorage(선택 페이지 복귀) or 전역 프로필 → buffer (1회만) ---- */
+  useEffect(() => {
+    if (profileLoading || initialized.current) return;
 
-    searchParams.delete("field");
-    searchParams.delete("values");
-    setSearchParams(searchParams, { replace: true });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    // URL 정리
+    if (searchParams.has("field") || searchParams.has("values")) {
+      searchParams.delete("field");
+      searchParams.delete("values");
+      setSearchParams(searchParams, { replace: true });
+    }
+
+    // 1) 선택 페이지에서 돌아온 경우: sessionStorage 복원
+    const saved = sessionStorage.getItem(SESSION_KEY);
+    sessionStorage.removeItem(SESSION_KEY); // 1회 사용 후 즉시 삭제
+
+    let base: Record<string, any> = {};
+
+    if (saved) {
+      try {
+        base = JSON.parse(saved);
+      } catch { /* 파싱 실패 → 전역 프로필 사용 */ }
+    }
+
+    // 2) sessionStorage가 없으면 전역 프로필에서 복사
+    if (Object.keys(base).length === 0 && myProfile) {
+      const { id, ...data } = myProfile;
+
+      // MBTI 문자열만 있고 퍼센티지가 없으면 변환
+      if (!data.mbtiPercentages && data.mbti) {
+        const axes = mbtiStringToSliders(data.mbti);
+        data.mbtiPercentages = {
+          EI: sliderToDb(axes.ei),
+          SN: sliderToDb(axes.sn),
+          TF: sliderToDb(axes.tf),
+          JP: sliderToDb(axes.jp),
+        };
+      }
+
+      base = data;
+    }
+
+    // 3) SelectionPage 결과 머지
+    if (selectionPatch.current) {
+      base = { ...base, ...selectionPatch.current };
+      selectionPatch.current = null;
+    }
+
+    setBuffer(base);
+    initialized.current = true;
+    setLoading(false);
+  }, [profileLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---- 2단계 헬퍼: MBTI 슬라이더 (UI 0~100 ↔ DB -100~100) ---- */
   const getMbtiSlider = (axis: "EI" | "SN" | "TF" | "JP"): number =>
@@ -504,7 +524,18 @@ export const EditProfilePage: React.FC = () => {
     set({ [entry.dbField]: (current + 1) % entry.options.length });
   };
 
-  /* ---- 3단계: 저장 버튼 → 버퍼를 그대로 DB에 쓰기 ---- */
+  /** 선택 페이지로 이동 시 현재 buffer를 임시 저장 */
+  const navigateToSelection = (url: string) => {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(buffer));
+    navigate(url);
+  };
+
+  /* ---- 뒤로가기 (저장하지 않고 나가기 → 로컬 버퍼 버림) ---- */
+  const handleBack = () => {
+    navigate(-1);
+  };
+
+  /* ---- 즉시 저장 (저장 버튼 → 서버 반영 + 전역 프로필 갱신) ---- */
   const handleSave = async () => {
     if (!(buffer.name ?? "").trim()) {
       setError("이름을 입력해주세요.");
@@ -516,14 +547,9 @@ export const EditProfilePage: React.FC = () => {
     setError("");
 
     try {
-      // height는 문자열로 입력받지만 DB엔 숫자로 저장
-      const heightNum = parseInt(String(buffer.height ?? ""), 10);
-      const saveData = {
-        ...buffer,
-        name: (buffer.name ?? "").trim(),
-        height: Number.isNaN(heightNum) ? undefined : heightNum,
-      };
-      await upsertUser(phone, saveData);
+      await upsertMyProfile(phone, buffer);
+      // 전역 프로필도 즉시 반영 (서버 재조회 없이 메모리 업데이트)
+      patchProfile(buffer);
       navigate("/me");
     } catch (err: any) {
       console.error("[EditProfile] save failed", err);
@@ -539,7 +565,7 @@ export const EditProfilePage: React.FC = () => {
   if (loading) {
     return (
       <div style={s.page}>
-        <Header title="프로필 수정" showBack />
+        <Header title="프로필 수정" showBack onBack={handleBack} />
         <div style={s.loadingWrap}>
           <p style={s.loadingText}>불러오는 중…</p>
         </div>
@@ -549,7 +575,7 @@ export const EditProfilePage: React.FC = () => {
 
   return (
     <div style={s.page}>
-      <Header title="프로필 수정" showBack />
+      <Header title="프로필 수정" showBack onBack={handleBack} />
 
       <div style={s.scroll}>
         {/* ==================== 카드 1: 기본 정보 ==================== */}
@@ -646,7 +672,7 @@ export const EditProfilePage: React.FC = () => {
             label="내특징"
             sub={(buffer.features?.length ?? 0) > 0 ? `${buffer.features.length}개 선택됨` : "선택해주세요."}
             onClick={() =>
-              navigate(
+              navigateToSelection(
                 `/select?mode=traits&title=${encodeURIComponent("내특징 선택")}&field=myTraits&returnTo=/me/edit&current=${encodeURIComponent(JSON.stringify(buffer.features ?? []))}`
               )
             }
@@ -657,7 +683,7 @@ export const EditProfilePage: React.FC = () => {
             label="관심사"
             sub={(buffer.interests?.length ?? 0) > 0 ? `${buffer.interests.length}개 선택됨` : "선택해주세요."}
             onClick={() =>
-              navigate(
+              navigateToSelection(
                 `/select?mode=interests&title=${encodeURIComponent("관심사 선택")}&field=interests&returnTo=/me/edit&current=${encodeURIComponent(JSON.stringify(buffer.interests ?? []))}`
               )
             }
@@ -668,7 +694,7 @@ export const EditProfilePage: React.FC = () => {
             label="이상형"
             sub={(buffer.idealType?.length ?? 0) > 0 ? `${buffer.idealType.length}개 선택됨` : "선택해주세요."}
             onClick={() =>
-              navigate(
+              navigateToSelection(
                 `/select?mode=ideal&title=${encodeURIComponent("이상형 선택")}&field=idealTraits&returnTo=/me/edit&current=${encodeURIComponent(JSON.stringify(buffer.idealType ?? []))}`
               )
             }

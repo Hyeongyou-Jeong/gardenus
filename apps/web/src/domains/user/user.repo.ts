@@ -137,6 +137,49 @@ export async function upsertUser(
   await setDoc(ref, { ...defaults, ...data }, { merge: true });
 }
 
+/* ================================================================
+   프로필 전용 안전 저장
+   ================================================================ */
+
+/** 클라이언트에서 절대 수정하면 안 되는 민감 필드 */
+const PROTECTED_FIELDS = [
+  "flower", "signupDate", "id",
+] as const;
+
+/**
+ * 프로필 편집 전용 저장.
+ * - PROTECTED_FIELDS를 자동 제거하여 flower 등을 절대 덮어쓰지 않음
+ * - updatedAt을 serverTimestamp()로 자동 추가
+ * - height를 숫자로 변환
+ */
+export async function upsertMyProfile(
+  uid: string,
+  draft: Record<string, any>,
+): Promise<void> {
+  // 민감 필드 제거
+  const safe: Record<string, any> = { ...draft };
+  for (const key of PROTECTED_FIELDS) {
+    delete safe[key];
+  }
+
+  // height 숫자 변환
+  if (safe.height != null) {
+    const h = parseInt(String(safe.height), 10);
+    safe.height = Number.isNaN(h) ? undefined : h;
+  }
+
+  // name trim
+  if (typeof safe.name === "string") {
+    safe.name = safe.name.trim() || undefined;
+  }
+
+  // updatedAt 자동 추가
+  safe.updatedAt = serverTimestamp();
+
+  const ref = doc(db, "users", uid);
+  await setDoc(ref, safe, { merge: true });
+}
+
 /**
  * users/{uid} 문서에서 특정 필드만 업데이트한다.
  * 문서가 반드시 존재해야 한다. (없으면 에러)

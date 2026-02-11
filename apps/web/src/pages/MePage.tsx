@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
+import { useProfile } from "@/auth/ProfileContext";
 import { Header, TabBar, Modal } from "@/ui";
-import { fetchUser, type UserDoc } from "@/domains/user/user.repo";
+import { updateUserFields } from "@/domains/user/user.repo";
 import { useMyFlower } from "@/shared/hooks/useMyFlower";
 import { color, radius, typo } from "@gardenus/shared";
 
@@ -68,14 +69,8 @@ const Row: React.FC<{
 export const MePage: React.FC = () => {
   const navigate = useNavigate();
   const { isAuthed, phone, authLoading, logout } = useAuth();
+  const { myProfile: profile, profileLoading, patchProfile } = useProfile();
   const { flower } = useMyFlower();
-
-  const [profile, setProfile] = useState<UserDoc | null>(null);
-  const [profileLoading, setProfileLoading] = useState(true);
-
-  const [toggleBenefit, setToggleBenefit] = useState(true);
-  const [toggleMatch, setToggleMatch] = useState(true);
-  const [toggleNotify, setToggleNotify] = useState(false);
 
   const [logoutModal, setLogoutModal] = useState(false);
   const [withdrawModal, setWithdrawModal] = useState(false);
@@ -87,26 +82,33 @@ export const MePage: React.FC = () => {
     }
   }, [authLoading, isAuthed, navigate]);
 
-  /* ---- 내 프로필 로드 ---- */
-  useEffect(() => {
-    if (!phone) return;
-    let alive = true;
+  /* ---- 토글 변경 → 전역 프로필 + 서버 반영 ---- */
+  const handleToggleBenefit = (v: boolean) => {
+    patchProfile({ ad: v });
+    if (phone) {
+      updateUserFields(phone, { ad: v }).catch((e) =>
+        console.error("[MePage] ad 토글 저장 실패", e),
+      );
+    }
+  };
 
-    setProfileLoading(true);
-    fetchUser(phone)
-      .then((p) => {
-        if (alive) setProfile(p);
-      })
-      .catch((e) => console.error("[MePage] profile load failed", e))
-      .finally(() => {
-        if (alive) setProfileLoading(false);
-      });
+  const handleToggleMatch = (v: boolean) => {
+    patchProfile({ isProfileVisible: v });
+    if (phone) {
+      updateUserFields(phone, { isProfileVisible: v }).catch((e) =>
+        console.error("[MePage] isProfileVisible 토글 저장 실패", e),
+      );
+    }
+  };
 
-    return () => {
-      alive = false;
-    };
-  }, [phone]);
-
+  const handleToggleNotify = (v: boolean) => {
+    patchProfile({ reminderEnabled: v });
+    if (phone) {
+      updateUserFields(phone, { reminderEnabled: v }).catch((e) =>
+        console.error("[MePage] reminderEnabled 토글 저장 실패", e),
+      );
+    }
+  };
   const handleLogout = () => {
     setLogoutModal(false);
     logout();
@@ -191,7 +193,7 @@ export const MePage: React.FC = () => {
           <p style={styles.sectionTitle}>서비스 이용</p>
           <Row
             label="가드너스의 다양한 혜택 받기"
-            right={<Toggle value={toggleBenefit} onChange={setToggleBenefit} />}
+            right={<Toggle value={!!profile?.ad} onChange={handleToggleBenefit} />}
           />
           <Row
             label="플라워 스토어"
@@ -207,11 +209,11 @@ export const MePage: React.FC = () => {
           />
           <Row
             label="매칭 받기"
-            right={<Toggle value={toggleMatch} onChange={setToggleMatch} />}
+            right={<Toggle value={!!profile?.isProfileVisible} onChange={handleToggleMatch} />}
           />
           <Row
             label="미응답 메시지 알림받기(오후 7시)"
-            right={<Toggle value={toggleNotify} onChange={setToggleNotify} />}
+            right={<Toggle value={!!profile?.reminderEnabled} onChange={handleToggleNotify} />}
           />
           <Row label="문의하기" right={<Chevron />} onClick={() => navigate("/inquiry")} />
           <Row label="개인정보 처리방침" right={<Chevron />} onClick={() => window.open("https://play-in.notion.site/1218855ab179804d9319d9b100d94630", "_blank")} />

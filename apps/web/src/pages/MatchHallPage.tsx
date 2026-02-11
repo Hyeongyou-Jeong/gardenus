@@ -43,6 +43,7 @@ export const MatchHallPage: React.FC = () => {
   /** 배치를 가져와서 seenIds 필터 + shuffle 후 반환 */
   const loadBatch = useCallback(async (myGender: boolean): Promise<UserDoc[]> => {
     const raw = await fetchCandidateBatch({ myGender, limitN: BATCH_SIZE });
+    console.log("raw", raw);
     const fresh = raw.filter((u) => {
       if (u.id === phone) return false;
       if (seenIds.current.has(u.id)) return false;

@@ -5,15 +5,16 @@ import { color, typo } from "@gardenus/shared";
 interface HeaderProps {
   title: string;
   showBack?: boolean;
+  onBack?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ title, showBack = false }) => {
+export const Header: React.FC<HeaderProps> = ({ title, showBack = false, onBack }) => {
   const navigate = useNavigate();
 
   return (
     <header style={styles.wrapper}>
       {showBack ? (
-        <button style={styles.backBtn} onClick={() => navigate(-1)}>
+        <button style={styles.backBtn} onClick={onBack ?? (() => navigate(-1))}>
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
             <path
               d="M15 19l-7-7 7-7"

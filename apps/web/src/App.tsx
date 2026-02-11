@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/auth/AuthContext";
+import { ProfileProvider } from "@/auth/ProfileContext";
 
 /* ---- Lazy imports ---- */
 const MatchHallPage = lazy(() =>
@@ -111,23 +112,25 @@ const App: React.FC = () => {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <BrowserRouter>
-          <Suspense fallback={<Loading />}>
-            <Routes>
-              <Route path="/" element={<MatchHallPage />} />
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/verify" element={<VerifyPage />} />
-              <Route path="/me" element={<MePage />} />
-              <Route path="/me/edit" element={<EditProfilePage />} />
-              <Route path="/select" element={<SelectionPage />} />
-              <Route path="/inquiry" element={<InquiryPage />} />
-              <Route path="/community" element={<CommunityPage />} />
-              <Route path="/chat" element={<PlaceholderPage />} />
-              <Route path="/like" element={<LikePage />} />
-              <Route path="/store/flowers" element={<FlowerStorePage />} />
-            </Routes>
-          </Suspense>
-        </BrowserRouter>
+        <ProfileProvider>
+          <BrowserRouter>
+            <Suspense fallback={<Loading />}>
+              <Routes>
+                <Route path="/" element={<MatchHallPage />} />
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/verify" element={<VerifyPage />} />
+                <Route path="/me" element={<MePage />} />
+                <Route path="/me/edit" element={<EditProfilePage />} />
+                <Route path="/select" element={<SelectionPage />} />
+                <Route path="/inquiry" element={<InquiryPage />} />
+                <Route path="/community" element={<CommunityPage />} />
+                <Route path="/chat" element={<PlaceholderPage />} />
+                <Route path="/like" element={<LikePage />} />
+                <Route path="/store/flowers" element={<FlowerStorePage />} />
+              </Routes>
+            </Suspense>
+          </BrowserRouter>
+        </ProfileProvider>
       </AuthProvider>
     </ErrorBoundary>
   );
