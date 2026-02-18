@@ -1,0 +1,100 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── users/{uid} ──
+    match /users/{uid} {
+      allow read: if true;
+
+      allow create: if request.auth != null
+                    && (request.auth.uid == uid
+                        || request.auth.token.phone_number == uid);
+
+      allow update: if request.auth != null
+                    && (request.auth.uid == uid
+                        || request.auth.token.phone_number == uid);
+
+      // ── users/{uid}/notifications/{notifId} ──
+      // uid = phoneNumber(E.164) 기준이므로 token.phone_number 로 본인 확인
+      match /notifications/{notifId} {
+        allow read: if request.auth != null
+                    && request.auth.token.phone_number == uid;
+
+        allow create: if request.auth != null
+                      && request.auth.token.phone_number == uid;
+
+        // readAt 필드만 수정 허용 (읽음 처리)
+        allow update: if request.auth != null
+                      && request.auth.token.phone_number == uid
+                      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["readAt"]);
+
+        allow delete: if false;
+      }
+    }
+
+    // ── payments/{paymentId} ──
+    match /payments/{paymentId} {
+      allow read, write: if false;
+    }
+
+    // ── matchRequests/{fromUid}_{toUid} ──
+    // fromUid/toUid는 phoneNumber(E.164) 문자열
+    match /matchRequests/{docId} {
+      allow read: if request.auth != null;
+
+      allow create: if request.auth != null
+                    && request.resource.data.fromUid is string
+                    && request.resource.data.toUid is string
+                    && request.resource.data.status == "PENDING";
+
+      allow update: if request.auth != null
+                    && request.resource.data.fromUid == resource.data.fromUid
+                    && request.resource.data.toUid == resource.data.toUid
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && (
+                      // 보낸 사람: CANCELED 로만 전환 가능
+                      (request.auth.token.phone_number == resource.data.fromUid
+                       && request.resource.data.status == "CANCELED")
+                      ||
+                      // 받는 사람: ACCEPTED 또는 DECLINED 로만 전환 가능
+                      (request.auth.token.phone_number == resource.data.toUid
+                       && request.resource.data.status in ["ACCEPTED", "DECLINED"])
+                    );
+
+      // 보낸 사람만 삭제 가능 (phone_number == fromUid)
+      allow delete: if request.auth != null
+                    && request.auth.token.phone_number == resource.data.fromUid;
+    }
+
+    // ── matches/{minUid}_{maxUid} ──
+    match /matches/{docId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.userA is string
+                    && request.resource.data.userB is string
+                    && request.resource.data.createdAt is timestamp
+                    && request.resource.data.sourceRequestId is string;
+      allow update, delete: if false;
+    }
+
+    // ── chatRooms ──
+    match /chatRooms/{roomId} {
+      allow read, write: if request.auth != null;
+
+      match /messages/{msgId} {
+        allow read, write: if request.auth != null;
+      }
+    }
+
+    // ── directchat ──
+    match /directchat/{chatId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+
+      match /{sub=**} {
+        allow read, write: if request.auth != null;
+      }
+    }
+  }
+}

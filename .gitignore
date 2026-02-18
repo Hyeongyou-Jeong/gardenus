@@ -27,6 +27,14 @@ ios/Flutter/Flutter.podspec
 .env
 .env.local
 
+# Secrets
+serviceAccount.json
+*-firebase-adminsdk-*.json
+
+# Output / logs
+out/
+firepit-log.txt
+
 # IDE
 .vscode/
 .idea/

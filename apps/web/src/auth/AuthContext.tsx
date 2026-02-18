@@ -100,7 +100,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const isAuthed = !!user;
   const phone = user?.phoneNumber ?? "";
   const userId = user?.uid ?? "";
-
   return (
     <AuthContext.Provider
       value={{

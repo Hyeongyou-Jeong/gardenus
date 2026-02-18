@@ -1,83 +1,116 @@
 import {
-  collection,
-  query,
-  where,
-  getDocs,
   doc,
   runTransaction,
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "@/infra/firebase/client";
+import { makeMatchRequestId } from "@/lib/match.schema";
+import type { MatchRequestStatus } from "@/lib/match.schema";
 
 const FLOWER_COST = 180;
 
 export interface MatchRequestResult {
   success: boolean;
-  error?: "already_pending" | "not_enough_flower" | "unknown";
+  kind?: "created_forward" | "auto_accepted_reverse";
+  error?:
+    | "already_pending"
+    | "already_handled"
+    | "reverse_already_handled"
+    | "not_enough_flower"
+    | "unknown";
   message: string;
 }
 
 /**
- * 매칭 요청을 생성하고 플라워를 차감한다.
+ * 매칭 요청을 생성하거나, 역방향 PENDING이 있으면 자동 수락한다.
  *
- * - 중복 pending 요청 방지
- * - runTransaction으로 플라워 확인 + 차감 + 문서 생성을 원자적으로 처리
+ * fromUid/toUid는 모두 phoneNumber(E.164).
+ * 전체 로직을 단일 runTransaction으로 처리해 원자성 보장.
  */
 export async function createMatchRequest(
   fromUid: string,
-  toUid: string
+  toUid: string,
 ): Promise<MatchRequestResult> {
-  /* ---- 1) 중복 pending 요청 확인 ---- */
-  const pendingQuery = query(
-    collection(db, "matchRequests"),
-    where("fromUid", "==", fromUid),
-    where("toUid", "==", toUid),
-    where("status", "==", "pending")
-  );
+  const forwardId = makeMatchRequestId(fromUid, toUid);
+  const reverseId = makeMatchRequestId(toUid, fromUid);
+  const forwardRef = doc(db, "matchRequests", forwardId);
+  const reverseRef = doc(db, "matchRequests", reverseId);
+  const userRef = doc(db, "users", fromUid);
 
-  const pendingSnap = await getDocs(pendingQuery);
-  if (!pendingSnap.empty) {
-    return {
-      success: false,
-      error: "already_pending",
-      message: "이미 요청을 보냈습니다.",
-    };
-  }
-
-  /* ---- 2) 트랜잭션: 플라워 확인 + 차감 + 문서 생성 ---- */
   try {
-    const userRef = doc(db, "users", fromUid);
-    const matchReqRef = doc(collection(db, "matchRequests"));
+    return await runTransaction(db, async (tx) => {
+      const [reverseSnap, forwardSnap, userSnap] = await Promise.all([
+        tx.get(reverseRef),
+        tx.get(forwardRef),
+        tx.get(userRef),
+      ]);
 
-    await runTransaction(db, async (tx) => {
-      const userSnap = await tx.get(userRef);
-      const currentFlower = (userSnap.data()?.flower as number) ?? 0;
+      /* ── 1) 역방향(상대→나) PENDING 체크 ── */
+      if (reverseSnap.exists()) {
+        const st = reverseSnap.data()?.status as MatchRequestStatus | undefined;
 
+        if (st === "PENDING") {
+          tx.update(reverseRef, {
+            status: "ACCEPTED",
+            updatedAt: serverTimestamp(),
+          });
+          return {
+            success: true,
+            kind: "auto_accepted_reverse" as const,
+            message: "상대의 요청을 수락하여 매칭되었습니다.",
+          };
+        }
+
+        return {
+          success: false,
+          error: "reverse_already_handled" as const,
+          message: "이미 처리된 요청이 존재합니다.",
+        };
+      }
+
+      /* ── 2) 정방향(나→상대) 체크 ── */
+      if (forwardSnap.exists()) {
+        const st = forwardSnap.data()?.status as MatchRequestStatus | undefined;
+        if (st === "PENDING") {
+          return {
+            success: false,
+            error: "already_pending" as const,
+            message: "이미 요청을 보냈습니다.",
+          };
+        }
+        return {
+          success: false,
+          error: "already_handled" as const,
+          message: "이미 처리된 요청입니다.",
+        };
+      }
+
+      /* ── 3) 플라워 확인 + 차감 + 새 요청 생성 ── */
+      const currentFlower = (userSnap.data()?.flower as number | undefined) ?? 0;
       if (currentFlower < FLOWER_COST) {
         throw new Error("NOT_ENOUGH_FLOWER");
       }
 
-      // matchRequests 문서 생성
-      tx.set(matchReqRef, {
+      tx.set(forwardRef, {
         fromUid,
         toUid,
-        status: "pending",
+        status: "PENDING",
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         flowerCost: FLOWER_COST,
         refundEligible: true,
       });
 
-      // 플라워 차감
       tx.update(userRef, {
         flower: currentFlower - FLOWER_COST,
       });
-    });
 
-    return {
-      success: true,
-      message: "요청을 보냈습니다.",
-    };
+      return {
+        success: true,
+        kind: "created_forward" as const,
+        message: "요청을 보냈습니다.",
+      };
+    });
   } catch (err: any) {
     if (err?.message === "NOT_ENOUGH_FLOWER") {
       return {

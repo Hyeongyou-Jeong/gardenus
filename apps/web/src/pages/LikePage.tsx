@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { TabBar } from "@/ui";
 import { color, typo } from "@gardenus/shared";
+import { SentRequestsPage } from "./SentRequestsPage";
+import { ReceivedRequestsPage } from "./ReceivedRequestsPage";
 
 const TABS = ["받은 요청", "보낸 요청"];
 
@@ -29,12 +31,12 @@ export const LikePage: React.FC = () => {
         ))}
       </div>
 
-      {/* ---- 빈 상태 ---- */}
-      <div style={s.emptyWrap}>
-        <p style={s.emptyText}>
-          {activeTab === 0 ? "받은 요청이 없습니다." : "보낸 요청이 없습니다."}
-        </p>
-      </div>
+      {/* ---- 탭 콘텐츠 ---- */}
+      {activeTab === 0 ? (
+        <ReceivedRequestsPage />
+      ) : (
+        <SentRequestsPage />
+      )}
 
       <TabBar />
     </div>

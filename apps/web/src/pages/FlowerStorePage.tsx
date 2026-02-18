@@ -1,8 +1,11 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import * as PortOne from "@portone/browser-sdk/v2";
+import { httpsCallable } from "firebase/functions";
+import { getFunctions } from "firebase/functions";
+import { firebaseApp } from "@/infra/firebase/client";
 import { useAuth } from "@/auth/AuthContext";
 import { useMyFlower } from "@/shared/hooks/useMyFlower";
-import { addFlower } from "@/domains/user/user.repo";
 import { color, radius, typo } from "@gardenus/shared";
 
 /* ================================================================
@@ -10,21 +13,29 @@ import { color, radius, typo } from "@gardenus/shared";
    ================================================================ */
 
 interface FlowerProduct {
+  productId: string;
   amount: number;
+  priceKRW: number;
   discount: string;
-  price: string;
+  priceLabel: string;
   icon: string;
 }
 
 const PRODUCTS: FlowerProduct[] = [
-  { amount: 6400, discount: "60% 할인", price: "199,000원", icon: "🏆" },
-  { amount: 3200, discount: "40% 할인", price: "119,000원", icon: "🥇" },
-  { amount: 1600, discount: "40% 할인", price: "63,900원", icon: "🥈" },
-  { amount: 800,  discount: "40% 할인", price: "34,900원", icon: "🥉" },
-  { amount: 400,  discount: "20% 할인", price: "18,900원", icon: "🌸" },
-  { amount: 200,  discount: "6% 할인",  price: "10,000원", icon: "🌼" },
-  { amount: 100,  discount: "",          price: "6,000원",  icon: "🌱" },
+  { productId: "flower_6400", amount: 6400, priceKRW: 199000, discount: "60% 할인", priceLabel: "199,000원", icon: "🏆" },
+  { productId: "flower_3200", amount: 3200, priceKRW: 119000, discount: "40% 할인", priceLabel: "119,000원", icon: "🥇" },
+  { productId: "flower_1600", amount: 1600, priceKRW: 63900,  discount: "40% 할인", priceLabel: "63,900원",  icon: "🥈" },
+  { productId: "flower_800",  amount: 800,  priceKRW: 34900,  discount: "40% 할인", priceLabel: "34,900원",  icon: "🥉" },
+  { productId: "flower_400",  amount: 400,  priceKRW: 18900,  discount: "20% 할인", priceLabel: "18,900원",  icon: "🌸" },
+  { productId: "flower_200",  amount: 200,  priceKRW: 10000,  discount: "6% 할인",  priceLabel: "10,000원",  icon: "🌼" },
+  { productId: "flower_100",  amount: 100,  priceKRW: 6000,   discount: "",          priceLabel: "6,000원",   icon: "🌱" },
 ];
+
+const functions = getFunctions(firebaseApp, "asia-northeast3");
+const verifyPaymentFn = httpsCallable<
+  { paymentId: string; productId: string },
+  { success: boolean; flowerGranted: number }
+>(functions, "verifyPayment");
 
 /* ================================================================
    FlowerStorePage
@@ -36,18 +47,54 @@ export const FlowerStorePage: React.FC = () => {
   const { flower: myFlower } = useMyFlower();
   const [buying, setBuying] = useState(false);
 
-  const handleBuy = async (amount: number) => {
+  const handleBuy = async (product: FlowerProduct) => {
     if (!phone) {
       alert("로그인이 필요합니다.");
       return;
     }
     if (buying) return;
+
+    const storeId = import.meta.env.VITE_PORTONE_STORE_ID;
+    const channelKey = import.meta.env.VITE_PORTONE_CHANNEL_KEY;
+
+    if (!storeId || !channelKey) {
+      alert("결제 설정이 완료되지 않았습니다. 관리자에게 문의하세요.");
+      return;
+    }
+
     setBuying(true);
     try {
-      await addFlower(phone, amount);
-      console.log(`[FlowerStore] +${amount} 플라워 충전 완료 (테스트)`);
-    } catch (err) {
-      console.error("[FlowerStore] addFlower failed:", err);
+      const paymentId = `payment_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+      const response = await PortOne.requestPayment({
+        storeId,
+        channelKey,
+        paymentId,
+        orderName: `플라워 ${product.amount.toLocaleString()}개`,
+        totalAmount: product.priceKRW,
+        currency: "CURRENCY_KRW",
+        payMethod: "CARD",
+      });
+
+      if (!response || response.code != null) {
+        const msg = response?.message ?? "결제가 취소되었습니다.";
+        console.warn("[FlowerStore] payment cancelled/failed:", msg);
+        alert(msg);
+        return;
+      }
+
+      const result = await verifyPaymentFn({
+        paymentId,
+        productId: product.productId,
+      });
+
+      if (result.data.success) {
+        alert(`${result.data.flowerGranted.toLocaleString()} 플라워가 충전되었습니다!`);
+      }
+    } catch (err: unknown) {
+      console.error("[FlowerStore] payment error:", err);
+      const message = err instanceof Error ? err.message : "결제 처리 중 오류가 발생했습니다.";
+      alert(message);
     } finally {
       setBuying(false);
     }
@@ -93,14 +140,14 @@ export const FlowerStorePage: React.FC = () => {
         {/* ---- 상품 리스트 ---- */}
         <div style={s.productList}>
           {PRODUCTS.map((p) => (
-            <button key={p.amount} style={s.productRow} onClick={() => handleBuy(p.amount)} disabled={buying}>
+            <button key={p.productId} style={s.productRow} onClick={() => handleBuy(p)} disabled={buying}>
               <div style={s.productLeft}>
                 <span style={s.productIcon}>{p.icon}</span>
                 <span style={s.productAmount}>{p.amount.toLocaleString()} 플라워</span>
                 {p.discount && <span style={s.productDiscount}>{p.discount}</span>}
               </div>
               <div style={s.productRight}>
-                <span style={s.productPrice}>{p.price}</span>
+                <span style={s.productPrice}>{p.priceLabel}</span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
                   <path d="M9 5l7 7-7 7" stroke={color.gray400} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>

@@ -5,7 +5,20 @@
     "apps/*",
     "packages/*"
   ],
-  "libc": ["glibc"],
-  "os": ["win32", "linux"],
-  "cpu": ["x64"]
+  "libc": [
+    "glibc"
+  ],
+  "os": [
+    "win32",
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "dependencies": {
+    "firebase-admin": "^13.6.1"
+  },
+  "devDependencies": {
+    "firebase-tools": "^15.6.0"
+  }
 }

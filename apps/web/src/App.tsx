@@ -1,9 +1,10 @@
 import React, { Suspense, lazy } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { AuthProvider } from "@/auth/AuthContext";
+import { AuthProvider, useAuth } from "@/auth/AuthContext";
 import { ProfileProvider } from "@/auth/ProfileContext";
 
 /* ---- Lazy imports ---- */
+const LandingPage = lazy(() => import("@/pages/LandingPage"));
 const MatchHallPage = lazy(() =>
   import("@/pages/MatchHallPage").then((m) => ({ default: m.MatchHallPage }))
 );
@@ -26,9 +27,9 @@ const SelectionPage = lazy(() =>
     default: m.SelectionPage,
   }))
 );
-const PlaceholderPage = lazy(() =>
-  import("@/pages/PlaceholderPage").then((m) => ({
-    default: m.PlaceholderPage,
+const ChatListPage = lazy(() =>
+  import("@/pages/ChatListPage").then((m) => ({
+    default: m.ChatListPage,
   }))
 );
 const InquiryPage = lazy(() =>
@@ -49,6 +50,11 @@ const LikePage = lazy(() =>
 const FlowerStorePage = lazy(() =>
   import("@/pages/FlowerStorePage").then((m) => ({
     default: m.FlowerStorePage,
+  }))
+);
+const ChatRoomPage = lazy(() =>
+  import("@/pages/ChatRoomPage").then((m) => ({
+    default: m.ChatRoomPage,
   }))
 );
 
@@ -108,6 +114,13 @@ const Loading = () => (
   </div>
 );
 
+/** "/" 경로: 로그인 상태면 MatchHallPage, 아니면 HomePage */
+const RootGate: React.FC = () => {
+  const { isAuthed, authLoading } = useAuth();
+  if (authLoading) return <Loading />;
+  return isAuthed ? <MatchHallPage /> : <LandingPage />;
+};
+
 const App: React.FC = () => {
   return (
     <ErrorBoundary>
@@ -116,7 +129,8 @@ const App: React.FC = () => {
           <BrowserRouter>
             <Suspense fallback={<Loading />}>
               <Routes>
-                <Route path="/" element={<MatchHallPage />} />
+                <Route path="/" element={<RootGate />} />
+                <Route path="/match" element={<MatchHallPage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/verify" element={<VerifyPage />} />
                 <Route path="/me" element={<MePage />} />
@@ -124,9 +138,11 @@ const App: React.FC = () => {
                 <Route path="/select" element={<SelectionPage />} />
                 <Route path="/inquiry" element={<InquiryPage />} />
                 <Route path="/community" element={<CommunityPage />} />
-                <Route path="/chat" element={<PlaceholderPage />} />
+                <Route path="/chat" element={<ChatListPage />} />
+                <Route path="/chat/:otherUid" element={<ChatRoomPage />} />
                 <Route path="/like" element={<LikePage />} />
                 <Route path="/store/flowers" element={<FlowerStorePage />} />
+                <Route path="/landingPage" element={<LandingPage />} />
               </Routes>
             </Suspense>
           </BrowserRouter>
