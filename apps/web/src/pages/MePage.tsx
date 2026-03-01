@@ -1,10 +1,17 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
 import { useProfile } from "@/auth/ProfileContext";
 import { Header, TabBar, Modal } from "@/ui";
-import { updateUserFields } from "@/domains/user/user.repo";
-import { useMyFlower } from "@/shared/hooks/useMyFlower";
+import { updateUserFields, type UserDoc } from "@/domains/user/user.repo";
+import { deleteAccount } from "@/auth/deleteAccount";
+import {
+  verifyStudentId,
+  type VerifyStudentIdResult,
+} from "@/auth/verifyStudentId";
+import { useMyFlower } from "@/domains/user/useMyFlower";
+import { storage } from "@/infra/firebase/storage";
+import { ref, uploadBytes } from "firebase/storage";
 import { color, radius, typo } from "@gardenus/shared";
 
 /* ---------- Toggle Component ---------- */
@@ -67,13 +74,33 @@ const Row: React.FC<{
 
 /* ========== MePage ========== */
 export const MePage: React.FC = () => {
+  const SHOW_VERIFY_DEBUG = import.meta.env.DEV;
   const navigate = useNavigate();
-  const { isAuthed, phone, authLoading, logout } = useAuth();
-  const { myProfile: profile, profileLoading, patchProfile } = useProfile();
+  const { isAuthed, phone, userId, authLoading, logout } = useAuth();
+  const { myProfile: profile, profileLoading, patchProfile, refreshProfile } = useProfile();
   const { flower } = useMyFlower();
+  const schoolVerified = !!(
+    profile as { schoolVerified?: boolean } | null
+  )?.schoolVerified;
+  const schoolVerifyButtonDisabled = profileLoading || schoolVerified;
+  const schoolVerifyButtonText = profileLoading
+    ? "불러오는 중..."
+    : schoolVerified
+      ? "학교 인증 완료"
+      : "학생증 인증하고 포인트 받기";
 
   const [logoutModal, setLogoutModal] = useState(false);
   const [withdrawModal, setWithdrawModal] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [schoolVerifyModal, setSchoolVerifyModal] = useState(false);
+  const [schoolVerifyStep, setSchoolVerifyStep] = useState<
+    "idle" | "uploading" | "verifying" | "done" | "retry" | "error"
+  >("idle");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [schoolVerifyResult, setSchoolVerifyResult] = useState("");
+  const [schoolVerifyResponse, setSchoolVerifyResponse] =
+    useState<VerifyStudentIdResult | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   /* ---- 접근 제어 ---- */
   useEffect(() => {
@@ -117,16 +144,125 @@ export const MePage: React.FC = () => {
 
   const handleWithdraw = async () => {
     setWithdrawModal(false);
+    setWithdrawing(true);
     try {
-      const { auth } = await import("@/infra/firebase/client");
-      if (auth?.currentUser) {
-        await auth.currentUser.delete();
-      }
+      await deleteAccount();
+      logout();
+      navigate("/");
     } catch (err) {
       console.error("[MePage] 회원탈퇴 실패:", err);
+      alert("탈퇴 처리 중 오류가 발생했습니다.");
+      setWithdrawing(false);
     }
-    logout();
-    navigate("/");
+  };
+
+  const resetSchoolVerifyModal = () => {
+    setSchoolVerifyStep("idle");
+    setSelectedFile(null);
+    setSchoolVerifyResult("");
+    setSchoolVerifyResponse(null);
+  };
+
+  const handleOpenSchoolVerifyModal = () => {
+    resetSchoolVerifyModal();
+    setSchoolVerifyModal(true);
+  };
+
+  const handleCloseSchoolVerifyModal = () => {
+    if (schoolVerifyStep === "uploading" || schoolVerifyStep === "verifying") {
+      return;
+    }
+    setSchoolVerifyModal(false);
+    resetSchoolVerifyModal();
+  };
+
+  const handlePickSchoolIdImage = () => {
+    if (schoolVerifyStep === "uploading" || schoolVerifyStep === "verifying") {
+      return;
+    }
+    fileInputRef.current?.click();
+  };
+
+  const handleSchoolImageSelected = (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0] ?? null;
+    setSelectedFile(file);
+    if (file) {
+      setSchoolVerifyResult(`${file.name} 선택됨`);
+      if (
+        schoolVerifyStep === "retry" ||
+        schoolVerifyStep === "error" ||
+        schoolVerifyStep === "done"
+      ) {
+        setSchoolVerifyStep("idle");
+      }
+    }
+  };
+
+  const handleStartSchoolVerification = async () => {
+    if (!selectedFile) {
+      setSchoolVerifyStep("error");
+      setSchoolVerifyResult("파일을 선택해 주세요.");
+      return;
+    }
+    if (!userId) {
+      setSchoolVerifyStep("error");
+      setSchoolVerifyResult("로그인 정보를 확인할 수 없습니다. 다시 로그인해 주세요.");
+      return;
+    }
+
+    try {
+      setSchoolVerifyStep("uploading");
+      setSchoolVerifyResult("이미지 업로드 중…");
+      const uploadBlob = await compressImage(selectedFile);
+      const requestId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const storagePath = `studentIds/${userId}/${requestId}.jpg`;
+      const storageRef = ref(storage, storagePath);
+      await uploadBytes(storageRef, uploadBlob, {
+        contentType: "image/jpeg",
+      });
+
+      setSchoolVerifyStep("verifying");
+      setSchoolVerifyResult("학교 인증 확인 중…");
+      const result = await verifyStudentId(storagePath);
+      setSchoolVerifyResponse(result);
+
+      if (result.ok) {
+        patchProfile({ schoolVerified: true } as Partial<UserDoc>);
+        void refreshProfile();
+        setSchoolVerifyStep("done");
+        setSchoolVerifyResult(
+          result.rewarded
+            ? "학교 인증 완료! 포인트가 지급됐어요."
+            : "학교 인증 완료! (포인트는 이미 지급됨)",
+        );
+        return;
+      }
+
+      setSchoolVerifyStep("retry");
+      setSchoolVerifyResult("학교명이 잘 보이게 다시 촬영해 주세요.");
+    } catch (error) {
+      console.error("[MePage] 학교 인증 실패:", error);
+      setSchoolVerifyStep("error");
+      setSchoolVerifyResult("오류가 발생했어요. 다시 시도해 주세요.");
+      setSchoolVerifyResponse(null);
+    }
+  };
+
+  const handleSchoolVerifyConfirm = () => {
+    if (schoolVerifyStep === "uploading" || schoolVerifyStep === "verifying") {
+      return;
+    }
+    if (
+      schoolVerifyStep === "done" ||
+      schoolVerifyStep === "retry" ||
+      schoolVerifyStep === "error"
+    ) {
+      handleCloseSchoolVerifyModal();
+      return;
+    }
+    void handleStartSchoolVerification();
   };
 
   /* ---- 렌더링 ---- */
@@ -187,6 +323,13 @@ export const MePage: React.FC = () => {
         >
           프로필 수정하기
         </button>
+        <button
+          style={schoolVerifyButtonDisabled ? styles.verifyBtnDisabled : styles.verifyBtn}
+          disabled={schoolVerifyButtonDisabled}
+          onClick={schoolVerifyButtonDisabled ? undefined : handleOpenSchoolVerifyModal}
+        >
+          {schoolVerifyButtonText}
+        </button>
 
         {/* 서비스 이용 */}
         <div style={styles.section}>
@@ -246,15 +389,116 @@ export const MePage: React.FC = () => {
 
       {/* ---- 회원탈퇴 모달 ---- */}
       <Modal
-        open={withdrawModal}
+        open={withdrawModal || withdrawing}
         title="회원 탈퇴"
-        description={"정말로 탈퇴하시겠습니까?\n탈퇴 시 모든 데이터가 삭제되며\n복구가 불가능합니다."}
-        cancelText="취소"
-        confirmText="탈퇴하기"
+        description={
+          withdrawing
+            ? "탈퇴 처리 중입니다…"
+            : "정말로 탈퇴하시겠습니까?\n탈퇴 시 모든 데이터가 삭제되며\n복구가 불가능합니다."
+        }
+        cancelText={withdrawing ? " " : "취소"}
+        confirmText={withdrawing ? "처리 중…" : "탈퇴하기"}
         confirmDanger
-        onCancel={() => setWithdrawModal(false)}
-        onConfirm={handleWithdraw}
+        onCancel={() => { if (!withdrawing) setWithdrawModal(false); }}
+        onConfirm={() => { if (!withdrawing) handleWithdraw(); }}
       />
+
+      <Modal
+        open={schoolVerifyModal}
+        title="학교 인증하고 포인트 받기"
+        description="학생증 사진을 업로드하면 학교 인증 후 포인트를 지급해드려요."
+        cancelText={
+          schoolVerifyStep === "uploading" || schoolVerifyStep === "verifying"
+            ? "처리 중…"
+            : schoolVerifyStep === "done" ||
+                schoolVerifyStep === "retry" ||
+                schoolVerifyStep === "error"
+              ? "닫기"
+              : "취소"
+        }
+        confirmText={
+          schoolVerifyStep === "done" ||
+          schoolVerifyStep === "retry" ||
+          schoolVerifyStep === "error"
+            ? "닫기"
+            : "업로드하고 인증하기"
+        }
+        onCancel={handleCloseSchoolVerifyModal}
+        onConfirm={handleSchoolVerifyConfirm}
+      >
+        <div style={styles.verifyModalBody}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: "none" }}
+            onChange={handleSchoolImageSelected}
+          />
+          <button
+            style={styles.pickImageBtn}
+            onClick={handlePickSchoolIdImage}
+            disabled={
+              schoolVerifyStep === "uploading" || schoolVerifyStep === "verifying"
+            }
+          >
+            사진 선택
+          </button>
+          <p style={styles.verifyStatusText}>
+            {schoolVerifyStep === "idle" && (schoolVerifyResult || "대기 중")}
+            {schoolVerifyStep === "uploading" && "업로드 중…"}
+            {schoolVerifyStep === "verifying" && "인증 확인 중…"}
+            {(schoolVerifyStep === "done" ||
+              schoolVerifyStep === "retry" ||
+              schoolVerifyStep === "error") &&
+              schoolVerifyResult}
+          </p>
+          {SHOW_VERIFY_DEBUG && schoolVerifyResponse && (
+            <div style={styles.verifyDebugPanel}>
+              <p style={styles.verifyDebugLine}>
+                상태: {schoolVerifyResponse.status}
+              </p>
+              {schoolVerifyResponse.ok && (
+                <p style={styles.verifyDebugLine}>
+                  포인트 지급: {schoolVerifyResponse.rewarded ? "완료" : "기지급"}
+                </p>
+              )}
+              <p style={styles.verifyDebugLine}>
+                OCR 학생증같음:{" "}
+                {schoolVerifyResponse.ocr
+                  ? schoolVerifyResponse.ocr.isStudentIdLike ? "O" : "X"
+                  : "없음"}
+              </p>
+              <p style={{ ...styles.verifyDebugLine, whiteSpace: "pre-line" }}>
+                후보 학교명:{" "}
+                {schoolVerifyResponse.ocr?.candidates?.length
+                  ? schoolVerifyResponse.ocr.candidates.join("\n")
+                  : "없음"}
+              </p>
+              <p style={styles.verifyDebugLine}>
+                매칭된 후보: {schoolVerifyResponse.ocr?.matchedCandidate ?? "없음"}
+              </p>
+              <p style={styles.verifyDebugLine}>
+                정제된 학교명:{" "}
+                {schoolVerifyResponse.ocr?.detectedSchool ?? "읽기 실패"}
+              </p>
+              <p style={styles.verifyDebugLine}>
+                추출 방식: {schoolVerifyResponse.ocr?.method ?? "none"}
+              </p>
+              <p style={styles.verifyDebugLine}>
+                OCR 점수:{" "}
+                {schoolVerifyResponse.ocr
+                  ? schoolVerifyResponse.ocr.likeScore.toFixed(2)
+                  : "N/A"}
+              </p>
+              <p style={styles.verifyDebugLine}>
+                사유:{" "}
+                {schoolVerifyResponse.ocr?.reason ||
+                  (!schoolVerifyResponse.ok ? schoolVerifyResponse.reason : "-")}
+              </p>
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 };
@@ -269,6 +513,45 @@ const InfoChip: React.FC<{ label: string; value: string }> = ({
     <span style={styles.infoChipValue}>{value}</span>
   </div>
 );
+
+async function compressImage(file: File): Promise<Blob> {
+  try {
+    const image = await loadImageFromFile(file);
+    const maxSide = 1280;
+    const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+    const targetWidth = Math.max(1, Math.round(image.width * scale));
+    const targetHeight = Math.max(1, Math.round(image.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, "image/jpeg", 0.75);
+    });
+    return blob ?? file;
+  } catch {
+    return file;
+  }
+}
+
+function loadImageFromFile(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = (err) => {
+      URL.revokeObjectURL(url);
+      reject(err);
+    };
+    img.src = url;
+  });
+}
 
 /* ================================================================
    스타일
@@ -360,6 +643,62 @@ const styles: Record<string, React.CSSProperties> = {
     ...typo.button,
     marginBottom: 24,
     cursor: "pointer",
+  },
+  verifyBtn: {
+    width: "100%",
+    padding: "12px 0",
+    borderRadius: radius.lg,
+    border: "none",
+    background: color.mint500,
+    color: color.white,
+    ...typo.button,
+    marginBottom: 24,
+    cursor: "pointer",
+  },
+  verifyBtnDisabled: {
+    width: "100%",
+    padding: "12px 0",
+    borderRadius: radius.lg,
+    border: `1px solid ${color.mint300}`,
+    background: color.mint100,
+    color: color.mint600,
+    ...typo.button,
+    marginBottom: 24,
+    cursor: "default",
+    opacity: 0.9,
+  },
+  verifyModalBody: {
+    marginTop: 8,
+    display: "grid",
+    gap: 10,
+  },
+  pickImageBtn: {
+    width: "100%",
+    padding: "10px 0",
+    borderRadius: radius.md,
+    border: `1px solid ${color.gray300}`,
+    background: color.white,
+    color: color.gray800,
+    ...typo.button,
+    cursor: "pointer",
+  },
+  verifyStatusText: {
+    ...typo.body,
+    color: color.gray700,
+    minHeight: 20,
+  },
+  verifyDebugPanel: {
+    marginTop: 8,
+    textAlign: "left",
+    padding: "10px 12px",
+    background: color.gray100,
+    borderRadius: radius.md,
+    display: "grid",
+    gap: 4,
+  },
+  verifyDebugLine: {
+    ...typo.caption,
+    color: color.gray700,
   },
   section: {
     background: color.white,

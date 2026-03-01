@@ -4,11 +4,11 @@ import { color, radius, typo } from "@gardenus/shared";
 import {
   TRAIT_CATEGORIES,
   type TraitCategory,
-} from "@/shared/constants/traits";
+} from "@/domains/user/traits";
 import {
   INTEREST_CATEGORIES,
   type InterestCategory,
-} from "@/shared/constants/interests";
+} from "@/domains/user/interests";
 
 /* ================================================================
    모드별 카테고리 데이터

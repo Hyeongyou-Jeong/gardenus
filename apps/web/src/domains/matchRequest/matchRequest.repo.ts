@@ -4,8 +4,8 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "@/infra/firebase/client";
-import { makeMatchRequestId } from "@/lib/match.schema";
-import type { MatchRequestStatus } from "@/lib/match.schema";
+import { makeMatchRequestId } from "@/domains/match/match.schema";
+import type { MatchRequestStatus } from "@/domains/match/match.schema";
 
 const FLOWER_COST = 180;
 

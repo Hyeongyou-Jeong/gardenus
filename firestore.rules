@@ -5,15 +5,41 @@ service cloud.firestore {
 
     // ── users/{uid} ──
     match /users/{uid} {
+      function protectedUserFields() {
+        return [
+          "schoolVerified",
+          "schoolVerifiedAt",
+          "schoolVerifiedDetectedSchool",
+          "studentIdVerificationStatus",
+          "studentIdVerificationReason",
+          "studentIdVerificationLastDetectedSchool",
+          "schoolVerifyRewardedAt",
+          "flower"
+        ];
+      }
+
+      function hasProtectedFieldsOnCreate() {
+        return request.resource.data.keys().hasAny(protectedUserFields());
+      }
+
+      function touchesProtectedFieldsOnUpdate() {
+        return request.resource.data
+          .diff(resource.data)
+          .affectedKeys()
+          .hasAny(protectedUserFields());
+      }
+
       allow read: if true;
 
       allow create: if request.auth != null
                     && (request.auth.uid == uid
-                        || request.auth.token.phone_number == uid);
+                        || request.auth.token.phone_number == uid)
+                    && !hasProtectedFieldsOnCreate();
 
       allow update: if request.auth != null
                     && (request.auth.uid == uid
-                        || request.auth.token.phone_number == uid);
+                        || request.auth.token.phone_number == uid)
+                    && !touchesProtectedFieldsOnUpdate();
 
       // ── users/{uid}/notifications/{notifId} ──
       // uid = phoneNumber(E.164) 기준이므로 token.phone_number 로 본인 확인
@@ -21,8 +47,7 @@ service cloud.firestore {
         allow read: if request.auth != null
                     && request.auth.token.phone_number == uid;
 
-        allow create: if request.auth != null
-                      && request.auth.token.phone_number == uid;
+        allow create: if false;
 
         // readAt 필드만 수정 허용 (읽음 처리)
         allow update: if request.auth != null
@@ -81,6 +106,16 @@ service cloud.firestore {
     // ── chatRooms ──
     match /chatRooms/{roomId} {
       allow read, write: if request.auth != null;
+
+      // leave/poke 상태는 서버 함수만 기록
+      match /members/{memberUid} {
+        allow read: if request.auth != null;
+        allow write: if false;
+      }
+
+      match /pokeStats/{uid} {
+        allow read, write: if false;
+      }
 
       match /messages/{msgId} {
         allow read, write: if request.auth != null;

@@ -18,6 +18,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/infra/firebase/client";
 import type { MatchRequestDoc, MatchRequestStatus } from "./match.schema";
+import { makeRoomId } from "@/domains/chat/chat.repo";
 
 /* ── 실시간 구독용 타입 ─────────────────────────────────────── */
 
@@ -86,6 +87,9 @@ export interface AcceptedMatchItem {
   fromUid: string;
   toUid: string;
   otherUid: string;
+  roomId: string;
+  roomStatus: "ACTIVE" | "EXPIRED";
+  expiredBy?: string;
   createdAt: Date | null;
 }
 
@@ -121,16 +125,42 @@ export async function fetchAcceptedMatchesForMe(
     if (map.has(d.id)) continue;
     const data = d.data() as MatchRequestDoc;
     const ts = data.createdAt;
+    const roomId = makeRoomId(data.fromUid, data.toUid).roomId;
     map.set(d.id, {
       id: d.id,
       fromUid: data.fromUid,
       toUid: data.toUid,
       otherUid: data.fromUid === myUid ? data.toUid : data.fromUid,
+      roomId,
+      roomStatus: "ACTIVE",
       createdAt: ts instanceof Timestamp ? ts.toDate() : null,
     });
   }
 
-  return [...map.values()].sort((a, b) => {
+  const items = [...map.values()];
+  await Promise.all(
+    items.map(async (item) => {
+      try {
+        const roomSnap = await getDoc(doc(db, "chatRooms", item.roomId));
+        const roomData = roomSnap.data();
+        const status = roomData?.status;
+        const expiredBy = roomData?.expiredBy;
+        if (status === "EXPIRED") {
+          item.roomStatus = "EXPIRED";
+          if (typeof expiredBy === "string") {
+            item.expiredBy = expiredBy;
+          }
+        }
+      } catch (e) {
+        console.error("[fetchAcceptedMatchesForMe] room status load failed", e);
+      }
+    }),
+  );
+
+  return items.sort((a, b) => {
+    if (a.roomStatus !== b.roomStatus) {
+      return a.roomStatus === "EXPIRED" ? 1 : -1;
+    }
     if (!a.createdAt) return 1;
     if (!b.createdAt) return -1;
     return b.createdAt.getTime() - a.createdAt.getTime();

@@ -1,15 +1,20 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
+import { Modal } from "@/ui";
 import { color, radius, typo } from "@gardenus/shared";
+import { getFunctions, httpsCallable } from "firebase/functions";
+import { firebaseApp } from "@/infra/firebase/client";
+import { db } from "@/infra/firebase/client";
+import { doc, onSnapshot } from "firebase/firestore";
 import {
   makeRoomId,
   ensureRoom,
   subscribeMessages,
   sendMessage,
   type ChatMessage,
-} from "@/lib/chat.repo";
-import { useUserNames } from "@/shared/hooks/useUserNames";
+} from "@/domains/chat/chat.repo";
+import { useUserNames } from "@/domains/user/useUserNames";
 
 /* ── 아이콘 ───────────────────────────────────────────────────── */
 
@@ -23,6 +28,14 @@ const SendIcon: React.FC = () => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
     <path d="M22 2L11 13" stroke={color.white} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     <path d="M22 2L15 22L11 13L2 9L22 2Z" stroke={color.white} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const MoreIcon: React.FC = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+    <circle cx="5" cy="12" r="1.6" fill={color.gray700} />
+    <circle cx="12" cy="12" r="1.6" fill={color.gray700} />
+    <circle cx="19" cy="12" r="1.6" fill={color.gray700} />
   </svg>
 );
 
@@ -48,11 +61,31 @@ export const ChatRoomPage: React.FC = () => {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [roomReady, setRoomReady] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [leaveModalOpen, setLeaveModalOpen] = useState(false);
+  const [pokeModalOpen, setPokeModalOpen] = useState(false);
+  const [actionLoading, setActionLoading] = useState<"leave" | "poke" | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [roomStatus, setRoomStatus] = useState<"ACTIVE" | "EXPIRED">("ACTIVE");
+  const [roomExpiredBy, setRoomExpiredBy] = useState<string | null>(null);
   const nameMap = useUserNames(otherUid ? [otherUid] : []);
   const otherName = nameMap[otherUid] ?? otherUid;
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const roomIdRef = useRef("");
+  const menuWrapRef = useRef<HTMLDivElement>(null);
+
+  const functions = getFunctions(firebaseApp, "asia-northeast3");
+  const leaveChatRoomCallable = httpsCallable<{ roomId: string }, { ok: boolean }>(
+    functions,
+    "leaveChatRoom",
+  );
+  const pokeChatRoomCallable = httpsCallable<
+    { roomId: string },
+    { ok: boolean; remaining: number; retryAt?: number }
+  >(functions, "pokeChatRoom");
+  const isRoomExpired = roomStatus === "EXPIRED";
+  const closedByOther = isRoomExpired && roomExpiredBy != null && roomExpiredBy !== phone;
 
   /* ── room 준비 + 메시지 구독 ── */
   useEffect(() => {
@@ -62,10 +95,21 @@ export const ChatRoomPage: React.FC = () => {
     roomIdRef.current = roomId;
 
     let unsub: (() => void) | undefined;
+    let unsubRoom: (() => void) | undefined;
 
     ensureRoom(roomId, [a, b])
       .then(() => {
         setRoomReady(true);
+        unsubRoom = onSnapshot(
+          doc(db, "chatRooms", roomId),
+          (snap) => {
+            const data = snap.data();
+            if (!data) return;
+            setRoomStatus(data.status === "EXPIRED" ? "EXPIRED" : "ACTIVE");
+            setRoomExpiredBy(typeof data.expiredBy === "string" ? data.expiredBy : null);
+          },
+          (e) => console.error("[ChatRoomPage] room snapshot", e),
+        );
         unsub = subscribeMessages({
           roomId,
           onChange: setMsgs,
@@ -74,7 +118,10 @@ export const ChatRoomPage: React.FC = () => {
       })
       .catch((e) => console.error("[ChatRoomPage] ensureRoom", e));
 
-    return () => unsub?.();
+    return () => {
+      unsub?.();
+      unsubRoom?.();
+    };
   }, [isAuthed, phone, otherUid]);
 
   /* ── 스크롤 하단 유지 ── */
@@ -82,10 +129,28 @@ export const ChatRoomPage: React.FC = () => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [msgs]);
 
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!menuWrapRef.current) return;
+      if (!menuWrapRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    window.addEventListener("mousedown", handleClickOutside);
+    return () => window.removeEventListener("mousedown", handleClickOutside);
+  }, [menuOpen]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 2200);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
   /* ── 전송 ── */
   const handleSend = async () => {
     const trimmed = text.trim();
-    if (!trimmed || sending || !phone) return;
+    if (!trimmed || sending || !phone || isRoomExpired) return;
     setSending(true);
     try {
       await sendMessage({
@@ -108,6 +173,51 @@ export const ChatRoomPage: React.FC = () => {
     }
   };
 
+  const handleLeaveChatRoom = async () => {
+    if (!roomIdRef.current || actionLoading) return;
+    setActionLoading("leave");
+    try {
+      await leaveChatRoomCallable({ roomId: roomIdRef.current });
+      setToast("채팅방을 나갔습니다.");
+      navigate("/chat");
+    } catch (error) {
+      console.error("[ChatRoomPage] leaveChatRoom", error);
+      setToast("채팅방 나가기에 실패했어요.");
+    } finally {
+      setActionLoading(null);
+      setLeaveModalOpen(false);
+    }
+  };
+
+  const formatRetryAt = (retryAt?: number): string => {
+    if (!retryAt) return "-";
+    const d = new Date(retryAt);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const handlePokeChatRoom = async () => {
+    if (!roomIdRef.current || actionLoading) return;
+    setActionLoading("poke");
+    try {
+      const result = await pokeChatRoomCallable({ roomId: roomIdRef.current });
+      const data = result.data;
+      if (data.ok) {
+        setToast(`콕 찔렀어요! (남은 횟수: ${data.remaining}/3)`);
+      } else {
+        setToast(
+          `48시간 동안 3회까지 가능해요. (다음 가능 시간: ${formatRetryAt(data.retryAt)})`,
+        );
+      }
+    } catch (error) {
+      console.error("[ChatRoomPage] pokeChatRoom", error);
+      setToast("콕 찌르기에 실패했어요.");
+    } finally {
+      setActionLoading(null);
+      setPokeModalOpen(false);
+    }
+  };
+
   /* ── 로딩/비로그인 ── */
   if (authLoading) {
     return <div style={s.loadWrap}><span style={s.muted}>로딩 중…</span></div>;
@@ -124,10 +234,44 @@ export const ChatRoomPage: React.FC = () => {
           <BackIcon />
         </button>
         <span style={s.headerTitle}>{otherName}</span>
+        <div ref={menuWrapRef} style={s.menuWrap}>
+          <button
+            style={s.menuBtn}
+            onClick={() => setMenuOpen((prev) => !prev)}
+            aria-label="메뉴"
+          >
+            <MoreIcon />
+          </button>
+          {menuOpen && (
+            <div style={s.menuDropdown}>
+              <button
+                style={s.menuItem}
+                onClick={() => {
+                  setMenuOpen(false);
+                  setLeaveModalOpen(true);
+                }}
+              >
+                채팅방 나가기
+              </button>
+              <button
+                style={s.menuItem}
+                onClick={() => {
+                  setMenuOpen(false);
+                  setPokeModalOpen(true);
+                }}
+              >
+                콕 찌르기
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── 메시지 영역 ── */}
       <div style={s.body}>
+        {closedByOther && (
+          <div style={s.closedBanner}>상대방이 대화를 종료했습니다</div>
+        )}
         {!roomReady ? (
           <div style={s.centerMsg}><span style={s.muted}>준비 중…</span></div>
         ) : msgs.length === 0 ? (
@@ -151,21 +295,49 @@ export const ChatRoomPage: React.FC = () => {
       {/* ── 입력 ── */}
       <div style={s.inputBar}>
         <input
-          style={s.input}
+          style={{ ...s.input, ...(isRoomExpired ? s.inputDisabled : {}) }}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="메시지를 입력하세요"
+          placeholder={isRoomExpired ? "대화가 종료되어 입력할 수 없습니다." : "메시지를 입력하세요"}
+          disabled={isRoomExpired}
         />
         <button
-          style={{ ...s.sendBtn, opacity: sending || !text.trim() ? 0.4 : 1 }}
+          style={{
+            ...s.sendBtn,
+            opacity: sending || !text.trim() || isRoomExpired ? 0.4 : 1,
+            ...(isRoomExpired ? s.sendBtnDisabled : {}),
+          }}
           onClick={handleSend}
-          disabled={sending || !text.trim()}
+          disabled={sending || !text.trim() || isRoomExpired}
           aria-label="전송"
         >
           <SendIcon />
         </button>
       </div>
+
+      <Modal
+        open={leaveModalOpen}
+        title="채팅방 나가기"
+        description="정말 나가시겠습니까?"
+        cancelText="취소"
+        confirmText={actionLoading === "leave" ? "나가는 중…" : "나가기"}
+        confirmDanger
+        onCancel={() => actionLoading !== "leave" && setLeaveModalOpen(false)}
+        onConfirm={handleLeaveChatRoom}
+      />
+
+      <Modal
+        open={pokeModalOpen}
+        title="콕 찌르기"
+        description={"상대에게 알람을 보낼까요?\n48시간 동안 최대 3회"}
+        cancelText="취소"
+        confirmText={actionLoading === "poke" ? "전송 중…" : "보내기"}
+        onCancel={() => actionLoading !== "poke" && setPokeModalOpen(false)}
+        onConfirm={handlePokeChatRoom}
+      />
+
+      {toast && <div style={s.toast}>{toast}</div>}
     </div>
   );
 };
@@ -211,6 +383,43 @@ const s: Record<string, React.CSSProperties> = {
     textOverflow: "ellipsis" as const,
     whiteSpace: "nowrap" as const,
   },
+  menuWrap: {
+    marginLeft: "auto",
+    position: "relative",
+  },
+  menuBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    border: "none",
+    background: "transparent",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+  },
+  menuDropdown: {
+    position: "absolute",
+    right: 0,
+    top: 36,
+    background: color.white,
+    border: `1px solid ${color.gray200}`,
+    borderRadius: radius.md,
+    boxShadow: "0 8px 20px rgba(0,0,0,0.12)",
+    minWidth: 150,
+    zIndex: 20,
+    overflow: "hidden",
+  },
+  menuItem: {
+    width: "100%",
+    textAlign: "left" as const,
+    padding: "10px 12px",
+    background: color.white,
+    border: "none",
+    ...typo.body,
+    color: color.gray800,
+    cursor: "pointer",
+  },
 
   /* ── 메시지 영역 ── */
   body: {
@@ -236,6 +445,16 @@ const s: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     minHeight: "100vh",
+  },
+  closedBanner: {
+    ...typo.caption,
+    color: color.gray600,
+    background: color.gray100,
+    border: `1px solid ${color.gray200}`,
+    borderRadius: radius.full,
+    padding: "8px 12px",
+    alignSelf: "center",
+    marginBottom: 6,
   },
 
   row: {
@@ -287,6 +506,11 @@ const s: Record<string, React.CSSProperties> = {
     ...typo.body,
     outline: "none",
   },
+  inputDisabled: {
+    background: color.gray100,
+    color: color.gray500,
+    cursor: "default",
+  },
   sendBtn: {
     width: 42,
     height: 42,
@@ -299,5 +523,23 @@ const s: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     flexShrink: 0,
     transition: "opacity 0.15s",
+  },
+  sendBtnDisabled: {
+    cursor: "default",
+  },
+  toast: {
+    position: "fixed",
+    left: "50%",
+    bottom: 22,
+    transform: "translateX(-50%)",
+    background: "rgba(35,35,35,0.92)",
+    color: color.white,
+    padding: "10px 14px",
+    borderRadius: radius.full,
+    ...typo.caption,
+    zIndex: 1200,
+    maxWidth: "90vw",
+    whiteSpace: "pre-wrap" as const,
+    textAlign: "center" as const,
   },
 };

@@ -6,6 +6,8 @@ import {
   limit,
   onSnapshot,
   updateDoc,
+  deleteDoc,
+  getDocs,
   serverTimestamp,
   Timestamp,
 } from "firebase/firestore";
@@ -87,4 +89,15 @@ export async function markAllNotificationsRead(
   await Promise.all(
     unread.map((n) => markNotificationRead(myUid, n.id)),
   );
+}
+
+/* ── 전체 삭제 (회원탈퇴용) ───────────────────────────────────── */
+
+export async function deleteAllMyNotifications(
+  myUid: string,
+): Promise<void> {
+  const snap = await getDocs(
+    collection(db, "users", myUid, "notifications"),
+  );
+  await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
 }

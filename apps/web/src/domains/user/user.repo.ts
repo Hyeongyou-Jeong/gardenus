@@ -62,6 +62,9 @@ export interface UserDoc {
 
   /* ---- 플라워 & 설정 ---- */
   flower?: number;
+  totalChargedKRW?: number;
+  totalChargedFlowers?: number;
+  
   ad?: boolean;
   isProfileVisible?: boolean;
   reminderEnabled?: boolean;
@@ -156,25 +159,29 @@ export async function upsertMyProfile(
   uid: string,
   draft: Record<string, any>,
 ): Promise<void> {
-  // 민감 필드 제거
   const safe: Record<string, any> = { ...draft };
+
   for (const key of PROTECTED_FIELDS) {
     delete safe[key];
   }
 
-  // height 숫자 변환
   if (safe.height != null) {
     const h = parseInt(String(safe.height), 10);
-    safe.height = Number.isNaN(h) ? undefined : h;
+    safe.height = Number.isNaN(h) ? deleteField() : h;
   }
 
-  // name trim
   if (typeof safe.name === "string") {
-    safe.name = safe.name.trim() || undefined;
+    safe.name = safe.name.trim() || deleteField();
   }
 
-  // updatedAt 자동 추가
   safe.updatedAt = serverTimestamp();
+
+  // Firestore는 undefined를 허용하지 않으므로 제거
+  for (const key of Object.keys(safe)) {
+    if (safe[key] === undefined) {
+      delete safe[key];
+    }
+  }
 
   const ref = doc(db, "users", uid);
   await setDoc(ref, safe, { merge: true });

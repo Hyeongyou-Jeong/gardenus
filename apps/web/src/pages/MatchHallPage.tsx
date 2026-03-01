@@ -3,18 +3,18 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
 import { Modal, TabBar } from "@/ui";
 import { color, radius, shadow, typo, calcAge } from "@gardenus/shared";
-import { fetchUser, type UserDoc } from "@/domains/user/user.repo";
+import { fetchUser, updateUserFields, type UserDoc } from "@/domains/user/user.repo";
 import { fetchCandidateBatch } from "@/domains/match/candidate.repo";
 import { getFlowerProfileUrl } from "@/infra/firebase/storage";
 import { createMatchRequest, FLOWER_COST } from "@/domains/matchRequest/matchRequest.repo";
-import { useMyFlower } from "@/shared/hooks/useMyFlower";
-import { useUserNames } from "@/shared/hooks/useUserNames";
-import { shuffle } from "@/shared/utils/shuffle";
+import { useMyFlower } from "@/domains/user/useMyFlower";
+import { useUserNames } from "@/domains/user/useUserNames";
+import { shuffle } from "@/utils/shuffle";
 import {
   subscribeMyNotifications,
   markAllNotificationsRead,
   type AppNotification,
-} from "@/lib/notifications.repo";
+} from "@/domains/notification/notifications.repo";
 
 /* ---- Storage URL 캐시 (모듈 스코프, 동일 id 재요청 방지) ---- */
 const imgCache = new Map<string, string>();
@@ -32,7 +32,11 @@ export const MatchHallPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loginModal, setLoginModal] = useState(false);
+  const [profileModal, setProfileModal] = useState(false);
   const [matchModal, setMatchModal] = useState(false);
+  const [flowerModal, setFlowerModal] = useState(false);
+  const [visibilityModal, setVisibilityModal] = useState(false);
+  const [visibilityUpdating, setVisibilityUpdating] = useState(false);
   const [imgUrl, setImgUrl] = useState<string | null>(null);
   const [imgFailed, setImgFailed] = useState(false);
   const {flower: myFlower } = useMyFlower();
@@ -86,45 +90,46 @@ export const MatchHallPage: React.FC = () => {
   const BATCH_SIZE = 50;
   const PREFETCH_THRESHOLD = 10;
 
-  /** 배치를 가져와서 seenIds 필터 + shuffle 후 반환 */
-  const loadBatch = useCallback(async (myGender: boolean): Promise<UserDoc[]> => {
+  /** 배치를 가져와서 seenIds 필터 + shuffle 후 반환 (seenIds 등록은 호출 측에서) */
+  const loadBatch = useCallback(async (myGender?: boolean): Promise<UserDoc[]> => {
     const raw = await fetchCandidateBatch({ myGender, limitN: BATCH_SIZE });
-    //console.log("raw", raw);
     const fresh = raw.filter((u) => {
-      if (u.id === phone) return false;
+      if (phone && u.id === phone) return false;
       if (seenIds.current.has(u.id)) return false;
-      seenIds.current.add(u.id);
       return true;
     });
     return shuffle(fresh);
   }, [phone]);
 
-  /* ---- 내 성별 조회 → 최초 후보 로드 ---- */
-  useEffect(() => {
-    if (!phone) {
-      setLoading(false);
-      return;
-    }
+  const markSeen = (users: UserDoc[]) => {
+    users.forEach((u) => seenIds.current.add(u.id));
+  };
 
+  /* ---- 최초 후보 로드 (로그인: 반대 성별 / 비로그인: 전체) ---- */
+  useEffect(() => {
     let alive = true;
     setLoading(true);
-
     (async () => {
       try {
-        const me = await fetchUser(phone);
-        if (!alive) return;
+        let gender: boolean | undefined;
 
-        if (me?.gender == null) {
-          setError("프로필에서 성별을 먼저 설정해주세요.");
-          setLoading(false);
-          return;
+        if (phone) {
+          const me = await fetchUser(phone);
+          if (!alive) return;
+          if (me?.isProfileVisible === false) {
+            setVisibilityModal(true);
+          }
+          if (me?.gender != null) {
+            gender = me.gender;
+            myGenderRef.current = gender;
+          }
         }
-        myGenderRef.current = me.gender;
 
-        const candidates = await loadBatch(me.gender);
+        const candidates = await loadBatch(gender);
         if (!alive) return;
-
+        markSeen(candidates);
         setProfiles(candidates);
+
         setCurrentIdx(0);
         setError(null);
       } catch (err) {
@@ -141,12 +146,14 @@ export const MatchHallPage: React.FC = () => {
 
   /* ---- 추가 배치 프리페치 ---- */
   const prefetch = useCallback(async () => {
-    if (fetchingRef.current || myGenderRef.current == null) return;
+    if (fetchingRef.current) return;
     fetchingRef.current = true;
 
     try {
-      const fresh = await loadBatch(myGenderRef.current);
+      const gender = myGenderRef.current ?? undefined;
+      const fresh = await loadBatch(gender);
       if (fresh.length > 0) {
+        markSeen(fresh);
         setProfiles((prev) => [...prev, ...fresh]);
       }
     } catch (err) {
@@ -185,9 +192,16 @@ export const MatchHallPage: React.FC = () => {
   const handleHeart = () => {
     if (!isAuthed) {
       setLoginModal(true);
+    } else if (myGenderRef.current == null) {
+      setProfileModal(true);
     } else {
       setMatchModal(true);
     }
+  };
+
+  const handleOpenProfile = () => {
+    if (!current?.id) return;
+    navigate(`/profiles/${encodeURIComponent(current.id)}`);
   };
 
   /* ---- profileImageId → Storage URL 비동기 로드 (캐시) ---- */
@@ -379,7 +393,11 @@ export const MatchHallPage: React.FC = () => {
         </div>
       ) : (
         /* 실제 프로필 카드 */
-        <div style={styles.card}>
+        <div
+          style={{ ...styles.card, ...styles.cardClickable }}
+          onClick={handleOpenProfile}
+          role="button"
+        >
           {showImg ? (
             <img
               src={imgUrl!}
@@ -409,7 +427,31 @@ export const MatchHallPage: React.FC = () => {
               </p>
             )}
 
-            {current.school && <p style={styles.school}>{current.school}</p>}
+            {current.school && (
+              <div style={styles.schoolRow}>
+                <p style={styles.school}>{current.school}</p>
+                {current.schoolVerified === true && (
+                  <span style={styles.schoolVerifiedBadge}>
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M20 7L10 17l-5-5"
+                        stroke={color.white}
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    학교인증
+                  </span>
+                )}
+              </div>
+            )}
 
             {current.aboutme && (
               <p style={styles.aboutme}>{current.aboutme}</p>
@@ -470,6 +512,20 @@ export const MatchHallPage: React.FC = () => {
         }}
       />
 
+      {/* ---- 프로필 작성 안내 모달 ---- */}
+      <Modal
+        open={profileModal}
+        title="프로필 작성"
+        description={"매칭을 원하시면\n프로필을 작성해주세요."}
+        cancelText="취소"
+        confirmText="작성하기"
+        onCancel={() => setProfileModal(false)}
+        onConfirm={() => {
+          setProfileModal(false);
+          navigate("/me/edit");
+        }}
+      />
+
       {/* ---- 매칭 요청 모달 ---- */}
       <Modal
         open={matchModal}
@@ -480,6 +536,11 @@ export const MatchHallPage: React.FC = () => {
         onCancel={() => setMatchModal(false)}
         onConfirm={async () => {
           if (requesting || !phone || !current?.id) return;
+          if (myFlower < FLOWER_COST) {
+            setMatchModal(false);
+            setFlowerModal(true);
+            return;
+          }
           setRequesting(true);
           try {
             const result = await createMatchRequest(phone, current.id);
@@ -511,6 +572,45 @@ export const MatchHallPage: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      {/* ---- 플라워 부족 모달 ---- */}
+      <Modal
+        open={flowerModal}
+        title="플라워 부족"
+        description={"플라워가 부족합니다.\n충전하시겠습니까?"}
+        cancelText="취소"
+        confirmText="충전하기"
+        onCancel={() => setFlowerModal(false)}
+        onConfirm={() => {
+          setFlowerModal(false);
+          navigate("/store/flowers");
+        }}
+      />
+
+      {/* ---- 매칭 기능 활성화 모달 ---- */}
+      <Modal
+        open={visibilityModal}
+        title="매칭 기능 활성화"
+        description={"현재 매칭 기능이 비활성화되어 있어요.\n지금 활성화하시겠어요?"}
+        cancelText="나중에"
+        confirmText={visibilityUpdating ? "활성화 중…" : "활성화하기"}
+        onCancel={() => {
+          if (!visibilityUpdating) setVisibilityModal(false);
+        }}
+        onConfirm={async () => {
+          if (!phone || visibilityUpdating) return;
+          setVisibilityUpdating(true);
+          try {
+            await updateUserFields(phone, { isProfileVisible: true });
+            setVisibilityModal(false);
+          } catch (err) {
+            console.error("[MatchHall] 활성화 실패", err);
+            alert("활성화에 실패했습니다. 다시 시도해주세요.");
+          } finally {
+            setVisibilityUpdating(false);
+          }
+        }}
+      />
     </div>
   );
 };
@@ -566,6 +666,9 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: shadow.card,
     background: color.white,
   },
+  cardClickable: {
+    cursor: "pointer",
+  },
   profileImage: {
     width: "100%",
     height: 420,
@@ -613,6 +716,26 @@ const styles: Record<string, React.CSSProperties> = {
     ...typo.caption,
     color: color.gray500,
     marginTop: 2,
+  },
+  schoolRow: {
+    marginTop: 2,
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    flexWrap: "wrap" as const,
+  },
+  schoolVerifiedBadge: {
+    ...typo.caption,
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 3,
+    background: color.mint500,
+    color: color.white,
+    borderRadius: radius.full,
+    padding: "2px 8px",
+    fontWeight: 700,
+    lineHeight: 1.2,
+    boxShadow: "0 2px 6px rgba(0, 176, 156, 0.28)",
   },
   aboutme: {
     ...typo.body,
@@ -738,7 +861,7 @@ const styles: Record<string, React.CSSProperties> = {
   bellWrap: {
     position: "fixed",
     top: 14,
-    right: 16,
+    right: "max(16px, calc((100vw - 430px) / 2 + 16px))",
     zIndex: 850,
   },
   bellBtn: {
@@ -780,7 +903,7 @@ const styles: Record<string, React.CSSProperties> = {
   notifPanel: {
     position: "fixed",
     top: 62,
-    right: 12,
+    right: "max(12px, calc((100vw - 430px) / 2 + 12px))",
     width: 300,
     maxHeight: 400,
     background: color.white,

@@ -5,7 +5,7 @@ import { httpsCallable } from "firebase/functions";
 import { getFunctions } from "firebase/functions";
 import { firebaseApp } from "@/infra/firebase/client";
 import { useAuth } from "@/auth/AuthContext";
-import { useMyFlower } from "@/shared/hooks/useMyFlower";
+import { useMyFlower } from "@/domains/user/useMyFlower";
 import { color, radius, typo } from "@gardenus/shared";
 
 /* ================================================================

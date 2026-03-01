@@ -118,7 +118,7 @@ const Loading = () => (
 const RootGate: React.FC = () => {
   const { isAuthed, authLoading } = useAuth();
   if (authLoading) return <Loading />;
-  return isAuthed ? <MatchHallPage /> : <LandingPage />;
+  return <MatchHallPage />;
 };
 
 const App: React.FC = () => {
@@ -135,6 +135,7 @@ const App: React.FC = () => {
                 <Route path="/verify" element={<VerifyPage />} />
                 <Route path="/me" element={<MePage />} />
                 <Route path="/me/edit" element={<EditProfilePage />} />
+                <Route path="/profiles/:uid" element={<EditProfilePage mode="read" />} />
                 <Route path="/select" element={<SelectionPage />} />
                 <Route path="/inquiry" element={<InquiryPage />} />
                 <Route path="/community" element={<CommunityPage />} />

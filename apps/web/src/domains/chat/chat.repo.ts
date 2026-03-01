@@ -1,6 +1,7 @@
 import {
   doc,
   collection,
+  getDoc,
   setDoc,
   updateDoc,
   query,
@@ -28,9 +29,17 @@ export async function ensureRoom(
   roomId: string,
   participants: [string, string],
 ): Promise<void> {
+  const roomRef = doc(db, "chatRooms", roomId);
+  const roomSnap = await getDoc(roomRef);
+  if (roomSnap.exists()) {
+    // 이미 생성된 방의 상태(EXPIRED 등)는 유지하고 participants만 보정
+    await setDoc(roomRef, { participants }, { merge: true });
+    return;
+  }
+
   await setDoc(
-    doc(db, "chatRooms", roomId),
-    { participants, createdAt: serverTimestamp() },
+    roomRef,
+    { participants, status: "ACTIVE", createdAt: serverTimestamp() },
     { merge: true },
   );
 }

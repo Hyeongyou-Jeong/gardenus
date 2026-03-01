@@ -10,9 +10,9 @@ import { db } from "@/infra/firebase/client";
 import { useAuth } from "@/auth/AuthContext";
 import { Modal } from "@/ui";
 import { color, radius, shadow, typo } from "@gardenus/shared";
-import { deleteMatchRequestAndRefund } from "@/lib/match.queries";
-import type { MatchRequestStatus } from "@/lib/match.schema";
-import { useUserNames } from "@/shared/hooks/useUserNames";
+import { deleteMatchRequestAndRefund } from "@/domains/match/match.queries";
+import type { MatchRequestStatus } from "@/domains/match/match.schema";
+import { useUserNames } from "@/domains/user/useUserNames";
 
 /* ── 타입 ─────────────────────────────────────────────────────── */
 

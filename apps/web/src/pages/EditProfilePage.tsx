@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
 import { useProfile } from "@/auth/ProfileContext";
 import { Header, Button } from "@/ui";
-import { upsertMyProfile } from "@/domains/user/user.repo";
+import { fetchUser, upsertMyProfile } from "@/domains/user/user.repo";
 import { color, radius, shadow, typo } from "@gardenus/shared";
 
 /* ================================================================
@@ -204,7 +204,8 @@ const MbtiSlider: React.FC<{
   rightSub: string;
   value: number; // 0 = fully left, 100 = fully right
   onChange: (v: number) => void;
-}> = ({ leftLabel, leftSub, rightLabel, rightSub, value, onChange }) => {
+  disabled?: boolean;
+}> = ({ leftLabel, leftSub, rightLabel, rightSub, value, onChange, disabled = false }) => {
   const trackRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
 
@@ -219,19 +220,21 @@ const MbtiSlider: React.FC<{
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
+      if (disabled) return;
       dragging.current = true;
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
       onChange(calcValue(e.clientX));
     },
-    [onChange, calcValue]
+    [onChange, calcValue, disabled]
   );
 
   const onPointerMove = useCallback(
     (e: React.PointerEvent) => {
+      if (disabled) return;
       if (!dragging.current) return;
       onChange(calcValue(e.clientX));
     },
-    [onChange, calcValue]
+    [onChange, calcValue, disabled]
   );
 
   const onPointerUp = useCallback(() => {
@@ -263,7 +266,10 @@ const MbtiSlider: React.FC<{
       <div style={mbtiStyles.trackWrap}>
         <div
           ref={trackRef}
-          style={mbtiStyles.track}
+          style={{
+            ...mbtiStyles.track,
+            cursor: disabled ? "default" : "pointer",
+          }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
@@ -383,16 +389,26 @@ const mbtiStyles: Record<string, React.CSSProperties> = {
    EditProfilePage
    ================================================================ */
 
-export const EditProfilePage: React.FC = () => {
+type EditProfileMode = "edit" | "read";
+
+interface EditProfilePageProps {
+  mode?: EditProfileMode;
+}
+
+export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" }) => {
   const navigate = useNavigate();
+  const params = useParams<{ uid: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
+  const isReadMode = mode === "read";
+  const targetUid = params.uid;
   const { isAuthed, phone, authLoading } = useAuth();
   const { myProfile, profileLoading, patchProfile } = useProfile();
 
   /* 접근 제어 */
   useEffect(() => {
+    if (isReadMode) return;
     if (!authLoading && !isAuthed) navigate("/login", { replace: true });
-  }, [authLoading, isAuthed, navigate]);
+  }, [authLoading, isAuthed, navigate, isReadMode]);
 
   /* ==================================================================
      버퍼 (draft): 전역 프로필을 로컬에서 편집하는 단일 상태
@@ -419,6 +435,9 @@ export const EditProfilePage: React.FC = () => {
   const paramsHandled = useRef(false);
 
   if (!paramsHandled.current) {
+    if (isReadMode) {
+      paramsHandled.current = true;
+    }
     const field = searchParams.get("field");
     const valuesRaw = searchParams.get("values");
     if (field && valuesRaw) {
@@ -434,7 +453,33 @@ export const EditProfilePage: React.FC = () => {
 
   /* ---- 초기 진입: sessionStorage(선택 페이지 복귀) or 전역 프로필 → buffer (1회만) ---- */
   useEffect(() => {
-    if (profileLoading || initialized.current) return;
+    if (initialized.current) return;
+
+    if (isReadMode) {
+      if (!targetUid) {
+        setLoading(false);
+        initialized.current = true;
+        return;
+      }
+      setLoading(true);
+      fetchUser(targetUid)
+        .then((doc) => {
+          const data: Record<string, any> = doc ? { ...doc } : {};
+          delete data.id;
+          setBuffer(data);
+        })
+        .catch((e) => {
+          console.error("[ReadProfile] load failed", e);
+          setError("프로필을 불러오지 못했습니다.");
+        })
+        .finally(() => {
+          setLoading(false);
+          initialized.current = true;
+        });
+      return;
+    }
+
+    if (profileLoading) return;
 
     // URL 정리
     if (searchParams.has("field") || searchParams.has("values")) {
@@ -482,7 +527,7 @@ export const EditProfilePage: React.FC = () => {
     setBuffer(base);
     initialized.current = true;
     setLoading(false);
-  }, [profileLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [profileLoading, isReadMode, targetUid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---- 2단계 헬퍼: MBTI 슬라이더 (UI 0~100 ↔ DB -100~100) ---- */
   const getMbtiSlider = (axis: "EI" | "SN" | "TF" | "JP"): number =>
@@ -526,6 +571,7 @@ export const EditProfilePage: React.FC = () => {
 
   /** 선택 페이지로 이동 시 현재 buffer를 임시 저장 */
   const navigateToSelection = (url: string) => {
+    if (isReadMode) return;
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(buffer));
     navigate(url);
   };
@@ -537,6 +583,7 @@ export const EditProfilePage: React.FC = () => {
 
   /* ---- 즉시 저장 (저장 버튼 → 서버 반영 + 전역 프로필 갱신) ---- */
   const handleSave = async () => {
+    if (isReadMode) return;
     if (!(buffer.name ?? "").trim()) {
       setError("이름을 입력해주세요.");
       return;
@@ -560,7 +607,7 @@ export const EditProfilePage: React.FC = () => {
   };
 
   /* ---- 렌더링 ---- */
-  if (authLoading || (!isAuthed && !authLoading)) return null;
+  if (!isReadMode && (authLoading || (!isAuthed && !authLoading))) return null;
 
   if (loading) {
     return (
@@ -575,7 +622,7 @@ export const EditProfilePage: React.FC = () => {
 
   return (
     <div style={s.page}>
-      <Header title="프로필 수정" showBack onBack={handleBack} />
+      <Header title={isReadMode ? "프로필" : "프로필 수정"} showBack onBack={handleBack} />
 
       <div style={s.scroll}>
         {/* ==================== 카드 1: 기본 정보 ==================== */}
@@ -591,7 +638,8 @@ export const EditProfilePage: React.FC = () => {
                 type="text"
                 placeholder="이름을 입력해주세요"
                 value={buffer.name ?? ""}
-                onChange={(e) => set({ name: e.target.value })}
+                onChange={(e) => !isReadMode && set({ name: e.target.value })}
+                readOnly={isReadMode}
                 style={s.nameInput}
               />
             </div>
@@ -609,12 +657,15 @@ export const EditProfilePage: React.FC = () => {
               {[true, false].map((g) => (
                 <button
                   key={String(g)}
-                  onClick={() => set({ gender: g })}
+                  onClick={() => !isReadMode && set({ gender: g })}
+                  disabled={isReadMode}
                   style={{
                     ...s.genderBtn,
                     borderColor: buffer.gender === g ? color.mint500 : color.gray300,
                     color: buffer.gender === g ? color.mint600 : color.gray400,
                     background: buffer.gender === g ? color.mint50 : color.white,
+                    cursor: isReadMode ? "default" : "pointer",
+                    pointerEvents: isReadMode ? "none" : "auto",
                   }}
                 >
                   {g ? "남자" : "여자"}
@@ -625,16 +676,16 @@ export const EditProfilePage: React.FC = () => {
 
           {/* 2열 정보 그리드 */}
           <div style={s.infoGrid}>
-            <InfoField icon={<IcCrown />} label="출생연도" value={buffer.born ?? ""} placeholder="예: 1998" suffix="년" onChange={(v) => set({ born: v })} inputMode="numeric" />
-            <InfoField icon={<IcHeight />} label="키" value={buffer.height != null ? String(buffer.height) : ""} placeholder="예: 174" suffix="cm" onChange={(v) => set({ height: v })} inputMode="numeric" />
+            <InfoField icon={<IcCrown />} label="출생연도" value={buffer.born ?? ""} placeholder="예: 1998" suffix="년" onChange={(v) => set({ born: v })} inputMode="numeric" readOnly={isReadMode} />
+            <InfoField icon={<IcHeight />} label="키" value={buffer.height != null ? String(buffer.height) : ""} placeholder="예: 174" suffix="cm" onChange={(v) => set({ height: v })} inputMode="numeric" readOnly={isReadMode} />
           </div>
           <div style={s.infoGrid}>
-            <InfoField icon={<IcPin />} label="거주지" value={buffer.residence ?? ""} placeholder="예: 서울 북부" onChange={(v) => set({ residence: v })} />
-            <InfoField icon={<IcBriefcase />} label="직업" value={buffer.job ?? ""} placeholder="직업 입력" onChange={(v) => set({ job: v })} />
+            <InfoField icon={<IcPin />} label="거주지" value={buffer.residence ?? ""} placeholder="예: 서울 북부" onChange={(v) => set({ residence: v })} readOnly={isReadMode} />
+            <InfoField icon={<IcBriefcase />} label="직업" value={buffer.job ?? ""} placeholder="직업 입력" onChange={(v) => set({ job: v })} readOnly={isReadMode} />
           </div>
           <div style={s.infoGrid}>
-            <InfoField icon={<IcSchool />} label="대학교" value={buffer.school ?? ""} placeholder="학교명" onChange={(v) => set({ school: v })} />
-            <InfoField icon={<IcDoc />} label="전공" value={buffer.department ?? ""} placeholder="전공 입력" onChange={(v) => set({ department: v })} />
+            <InfoField icon={<IcSchool />} label="대학교" value={buffer.school ?? ""} placeholder="학교명" onChange={(v) => set({ school: v })} readOnly={isReadMode} />
+            <InfoField icon={<IcDoc />} label="전공" value={buffer.department ?? ""} placeholder="전공 입력" onChange={(v) => set({ department: v })} readOnly={isReadMode} />
           </div>
 
           {/* 자기소개 */}
@@ -647,7 +698,8 @@ export const EditProfilePage: React.FC = () => {
               <textarea
                 placeholder="자신에 대해 적어주세요! (최소10자)"
                 value={buffer.aboutme ?? ""}
-                onChange={(e) => set({ aboutme: e.target.value })}
+                onChange={(e) => !isReadMode && set({ aboutme: e.target.value })}
+                readOnly={isReadMode}
                 rows={4}
                 style={s.textarea}
               />
@@ -659,10 +711,10 @@ export const EditProfilePage: React.FC = () => {
         {/* ==================== 카드 2: MBTI ==================== */}
         <div style={s.card}>
           <p style={s.cardTitle}>MBTI</p>
-          <MbtiSlider leftLabel="E" leftSub="외향형" rightLabel="I" rightSub="내향형" value={getMbtiSlider("EI")} onChange={(v) => setMbtiSlider("EI", v)} />
-          <MbtiSlider leftLabel="S" leftSub="감각형" rightLabel="N" rightSub="직관형" value={getMbtiSlider("SN")} onChange={(v) => setMbtiSlider("SN", v)} />
-          <MbtiSlider leftLabel="T" leftSub="사고형" rightLabel="F" rightSub="감정형" value={getMbtiSlider("TF")} onChange={(v) => setMbtiSlider("TF", v)} />
-          <MbtiSlider leftLabel="J" leftSub="판단형" rightLabel="P" rightSub="인식형" value={getMbtiSlider("JP")} onChange={(v) => setMbtiSlider("JP", v)} />
+          <MbtiSlider leftLabel="E" leftSub="외향형" rightLabel="I" rightSub="내향형" value={getMbtiSlider("EI")} onChange={(v) => setMbtiSlider("EI", v)} disabled={isReadMode} />
+          <MbtiSlider leftLabel="S" leftSub="감각형" rightLabel="N" rightSub="직관형" value={getMbtiSlider("SN")} onChange={(v) => setMbtiSlider("SN", v)} disabled={isReadMode} />
+          <MbtiSlider leftLabel="T" leftSub="사고형" rightLabel="F" rightSub="감정형" value={getMbtiSlider("TF")} onChange={(v) => setMbtiSlider("TF", v)} disabled={isReadMode} />
+          <MbtiSlider leftLabel="J" leftSub="판단형" rightLabel="P" rightSub="인식형" value={getMbtiSlider("JP")} onChange={(v) => setMbtiSlider("JP", v)} disabled={isReadMode} />
         </div>
 
         {/* ==================== 카드 3: 내특징 / 관심사 / 이상형 ==================== */}
@@ -671,33 +723,36 @@ export const EditProfilePage: React.FC = () => {
             icon={<IcPerson />}
             label="내특징"
             sub={(buffer.features?.length ?? 0) > 0 ? `${buffer.features.length}개 선택됨` : "선택해주세요."}
-            onClick={() =>
+            onClick={isReadMode ? undefined : () =>
               navigateToSelection(
                 `/select?mode=traits&title=${encodeURIComponent("내특징 선택")}&field=myTraits&returnTo=/me/edit&current=${encodeURIComponent(JSON.stringify(buffer.features ?? []))}`
               )
             }
+            disabled={isReadMode}
           />
           <div style={s.divider} />
           <TagRow
             icon={<IcSparkle />}
             label="관심사"
             sub={(buffer.interests?.length ?? 0) > 0 ? `${buffer.interests.length}개 선택됨` : "선택해주세요."}
-            onClick={() =>
+            onClick={isReadMode ? undefined : () =>
               navigateToSelection(
                 `/select?mode=interests&title=${encodeURIComponent("관심사 선택")}&field=interests&returnTo=/me/edit&current=${encodeURIComponent(JSON.stringify(buffer.interests ?? []))}`
               )
             }
+            disabled={isReadMode}
           />
           <div style={s.divider} />
           <TagRow
             icon={<IcHeart />}
             label="이상형"
             sub={(buffer.idealType?.length ?? 0) > 0 ? `${buffer.idealType.length}개 선택됨` : "선택해주세요."}
-            onClick={() =>
+            onClick={isReadMode ? undefined : () =>
               navigateToSelection(
                 `/select?mode=ideal&title=${encodeURIComponent("이상형 선택")}&field=idealTraits&returnTo=/me/edit&current=${encodeURIComponent(JSON.stringify(buffer.idealType ?? []))}`
               )
             }
+            disabled={isReadMode}
           />
         </div>
 
@@ -711,6 +766,7 @@ export const EditProfilePage: React.FC = () => {
                 value={getPref(key)}
                 Icon={PREF_ICONS[key]}
                 onClick={() => cyclePref(key)}
+                disabled={isReadMode}
               />
             ))}
           </div>
@@ -722,6 +778,7 @@ export const EditProfilePage: React.FC = () => {
                 value={getPref(key)}
                 Icon={PREF_ICONS[key]}
                 onClick={() => cyclePref(key)}
+                disabled={isReadMode}
               />
             ))}
           </div>
@@ -731,11 +788,13 @@ export const EditProfilePage: React.FC = () => {
       </div>
 
       {/* 저장 버튼 */}
-      <div style={s.bottom}>
-        <Button onClick={handleSave} disabled={saving}>
-          {saving ? "저장 중…" : "저장하기"}
-        </Button>
-      </div>
+      {!isReadMode && (
+        <div style={s.bottom}>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? "저장 중…" : "저장하기"}
+          </Button>
+        </div>
+      )}
     </div>
   );
 };
@@ -752,7 +811,8 @@ const InfoField: React.FC<{
   suffix?: string;
   onChange: (v: string) => void;
   inputMode?: "text" | "numeric";
-}> = ({ icon, label, value, placeholder, suffix, onChange, inputMode = "text" }) => (
+  readOnly?: boolean;
+}> = ({ icon, label, value, placeholder, suffix, onChange, inputMode = "text", readOnly = false }) => (
   <div style={{ minWidth: 0 }}>
     <p style={s.fieldLabel}>{label}</p>
     <div style={s.infoCard}>
@@ -762,7 +822,8 @@ const InfoField: React.FC<{
         inputMode={inputMode}
         placeholder={placeholder}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => !readOnly && onChange(e.target.value)}
+        readOnly={readOnly}
         style={s.infoInput}
       />
       {suffix && value && <span style={s.suffix}>{suffix}</span>}
@@ -779,8 +840,12 @@ const TagRow: React.FC<{
   label: string;
   sub: string;
   onClick?: () => void;
-}> = ({ icon, label, sub, onClick }) => (
-  <div style={s.tagRow} onClick={onClick}>
+  disabled?: boolean;
+}> = ({ icon, label, sub, onClick, disabled = false }) => (
+  <div
+    style={{ ...s.tagRow, cursor: disabled ? "default" : "pointer" }}
+    onClick={disabled ? undefined : onClick}
+  >
     <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
       {icon}
       <div>
@@ -788,7 +853,7 @@ const TagRow: React.FC<{
         <p style={{ ...typo.caption, color: color.gray400 }}>{sub}</p>
       </div>
     </div>
-    <IcChevron />
+    {!disabled && <IcChevron />}
   </div>
 );
 
@@ -801,10 +866,15 @@ const PrefCard: React.FC<{
   value: string;
   Icon: React.FC;
   onClick: () => void;
-}> = ({ label, value, Icon, onClick }) => (
+  disabled?: boolean;
+}> = ({ label, value, Icon, onClick, disabled = false }) => (
   <div>
     <p style={s.prefLabel}>{label}</p>
-    <button style={s.prefBtn} onClick={onClick}>
+    <button
+      style={{ ...s.prefBtn, cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.85 : 1 }}
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+    >
       <Icon />
       <span style={s.prefValue}>{value}</span>
     </button>

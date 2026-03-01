@@ -6,8 +6,8 @@ import { color, radius, shadow, typo } from "@gardenus/shared";
 import {
   fetchAcceptedMatchesForMe,
   type AcceptedMatchItem,
-} from "@/lib/match.queries";
-import { useUserNames } from "@/shared/hooks/useUserNames";
+} from "@/domains/match/match.queries";
+import { useUserNames } from "@/domains/user/useUserNames";
 
 /* ── 헬퍼 ─────────────────────────────────────────────────────── */
 
@@ -32,7 +32,10 @@ export const ChatListPage: React.FC = () => {
   const { isAuthed, phone, authLoading } = useAuth();
   const [items, setItems] = useState<AcceptedMatchItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const nameMap = useUserNames(items.map((i) => i.otherUid));
+  const visibleItems = items.filter(
+    (item) => !(item.roomStatus === "EXPIRED" && item.expiredBy === phone),
+  );
+  const nameMap = useUserNames(visibleItems.map((i) => i.otherUid));
 
   useEffect(() => {
     if (!isAuthed || !phone) return;
@@ -82,7 +85,7 @@ export const ChatListPage: React.FC = () => {
 
       {loading ? (
         <div style={s.center}><span style={s.muted}>불러오는 중…</span></div>
-      ) : items.length === 0 ? (
+      ) : visibleItems.length === 0 ? (
         <div style={s.center}>
           <div style={s.emptyCard}>
             <p style={s.emptyTitle}>아직 매칭이 없어요</p>
@@ -91,12 +94,22 @@ export const ChatListPage: React.FC = () => {
         </div>
       ) : (
         <div style={s.list}>
-          {items.map((item) => (
-            <button key={item.id} style={s.card} onClick={() => navigate(`/chat/${encodeURIComponent(item.otherUid)}`)}>
+          {visibleItems.map((item) => (
+            <button
+              key={item.id}
+              style={{
+                ...s.card,
+                ...(item.roomStatus === "EXPIRED" ? s.cardExpired : {}),
+              }}
+              onClick={() => navigate(`/chat/${encodeURIComponent(item.otherUid)}`)}
+            >
               <div style={s.avatar}>💬</div>
               <div style={s.cardBody}>
                 <span style={s.otherUid}>{nameMap[item.otherUid] ?? item.otherUid}</span>
-                <span style={s.dateText}>{formatDate(item.createdAt)}</span>
+                <span style={s.dateText}>
+                  {formatDate(item.createdAt)}
+                  {item.roomStatus === "EXPIRED" ? " · 대화 종료됨" : ""}
+                </span>
               </div>
               <Chevron />
             </button>
@@ -184,6 +197,9 @@ const s: Record<string, React.CSSProperties> = {
     textAlign: "left" as const,
     width: "100%",
     transition: "background 0.12s",
+  },
+  cardExpired: {
+    opacity: 0.55,
   },
   avatar: {
     width: 44,
