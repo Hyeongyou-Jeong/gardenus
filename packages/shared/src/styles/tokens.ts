@@ -1,17 +1,17 @@
 /** Gardenus Design Tokens */
 
 export const color = {
-  /** 메인 민트/그린 팔레트 */
-  mint50: "#e6f9f1",
-  mint100: "#b3f0d6",
-  mint200: "#80e6bb",
-  mint300: "#4ddda0",
-  mint400: "#26d68b",
-  mint500: "#00cc76",
-  mint600: "#00b368",
-  mint700: "#009957",
-  mint800: "#008048",
-  mint900: "#005a32",
+  /** 메인 포인트 팔레트 (black & white) */
+  mint50: "#f7f7f7",
+  mint100: "#eeeeee",
+  mint200: "#e2e2e2",
+  mint300: "#d0d0d0",
+  mint400: "#b8b8b8",
+  mint500: "#1f1f1f",
+  mint600: "#171717",
+  mint700: "#111111",
+  mint800: "#0a0a0a",
+  mint900: "#000000",
 
   /** 그레이 팔레트 */
   gray50: "#fafafa",
@@ -28,7 +28,7 @@ export const color = {
   white: "#ffffff",
   black: "#000000",
   backdrop: "rgba(0, 0, 0, 0.45)",
-  danger: "#e53935",
+  danger: "#2f2f2f",
 } as const;
 
 export const radius = {
@@ -43,7 +43,7 @@ export const radius = {
 export const shadow = {
   card: "0 2px 12px rgba(0,0,0,0.08)",
   modal: "0 8px 32px rgba(0,0,0,0.18)",
-  button: "0 2px 8px rgba(0,204,118,0.25)",
+  button: "0 2px 8px rgba(0,0,0,0.22)",
 } as const;
 
 export const typo = {

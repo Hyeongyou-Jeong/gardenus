@@ -5,9 +5,9 @@
     "apps/*",
     "packages/*"
   ],
-  "libc": [
-    "glibc"
-  ],
+  "scripts": {
+    "dev": "npm run dev -w @gardenus/web"
+  },
   "os": [
     "win32",
     "linux"

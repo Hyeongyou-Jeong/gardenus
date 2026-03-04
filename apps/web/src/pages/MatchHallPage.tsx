@@ -735,7 +735,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "2px 8px",
     fontWeight: 700,
     lineHeight: 1.2,
-    boxShadow: "0 2px 6px rgba(0, 176, 156, 0.28)",
+    boxShadow: shadow.button,
   },
   aboutme: {
     ...typo.body,

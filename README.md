@@ -43,17 +43,12 @@ gardenus/
 - **npm workspaces** 모노레포
 - `@gardenus/shared` — 플랫폼 공유 디자인 토큰/타입/유틸
 
-## 실행 방법
+## 로컬 실행
 
-```bash
-# 루트에서 전체 의존성 설치 (workspaces 자동 링크)
-npm install
-
-# 웹 개발 서버 실행
-npm run dev -w @gardenus/web
-```
-
-브라우저에서 `http://localhost:5173` 접속
+- 실행 폴더: `C:\dev\gardenus` (레포 루트)
+- 권장 Node 버전: LTS (v20+)
+- 설치: `npm install`
+- 실행: `npm run dev -w @gardenus/web`
 
 ## Firebase 설정 (선택)
 
