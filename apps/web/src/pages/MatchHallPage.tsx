@@ -5,7 +5,8 @@ import { Modal, TabBar } from "@/ui";
 import { color, radius, shadow, typo, calcAge } from "@gardenus/shared";
 import { fetchUser, updateUserFields, type UserDoc } from "@/domains/user/user.repo";
 import { fetchCandidateBatch } from "@/domains/match/candidate.repo";
-import { getFlowerProfileUrl } from "@/infra/firebase/storage";
+import { getFlowerProfileUrl, storage } from "@/infra/firebase/storage";
+import { getDownloadURL, ref } from "firebase/storage";
 import { createMatchRequest, FLOWER_COST } from "@/domains/matchRequest/matchRequest.repo";
 import { useMyFlower } from "@/domains/user/useMyFlower";
 import { useUserNames } from "@/domains/user/useUserNames";
@@ -204,32 +205,68 @@ export const MatchHallPage: React.FC = () => {
     navigate(`/profiles/${encodeURIComponent(current.id)}`);
   };
 
-  /* ---- profileImageId → Storage URL 비동기 로드 (캐시) ---- */
+  /* ---- 프로필 이미지 우선순위 로드 (AI path > direct URL > flower id) ---- */
   useEffect(() => {
     let alive = true;
+    const imagePath = current?.profileImagePath?.trim();
+    const directUrlRaw = (current?.photoURL ?? current?.aiPhotoURL) as string | undefined;
+    const directUrl = typeof directUrlRaw === "string" ? directUrlRaw.trim() : "";
     const id = current?.profileImageId;
     setImgFailed(false);
 
-    if (!id) {
-      setImgUrl(null);
-      return;
-    }
-    if (imgCache.has(id)) {
-      setImgUrl(imgCache.get(id)!);
-      return;
-    }
-
     setImgUrl(null); // 로딩 중에는 placeholder
-    getFlowerProfileUrl(id).then((url: string | null) => {
+    const resolve = async () => {
+      if (imagePath) {
+        const cacheKey = `path:${imagePath}`;
+        if (imgCache.has(cacheKey)) {
+          if (alive) setImgUrl(imgCache.get(cacheKey)!);
+          return;
+        }
+        try {
+          const url = await getDownloadURL(ref(storage, imagePath));
+          if (!alive) return;
+          imgCache.set(cacheKey, url);
+          setImgUrl(url);
+          return;
+        } catch {
+          // path 로드 실패 시 다음 후보로 폴백
+        }
+      }
+
+      if (directUrl) {
+        const cacheKey = `url:${directUrl}`;
+        if (imgCache.has(cacheKey)) {
+          if (alive) setImgUrl(imgCache.get(cacheKey)!);
+          return;
+        }
+        imgCache.set(cacheKey, directUrl);
+        if (alive) setImgUrl(directUrl);
+        return;
+      }
+
+      if (!id) {
+        if (alive) setImgUrl(null);
+        return;
+      }
+
+      const cacheKey = `flower:${id}`;
+      if (imgCache.has(cacheKey)) {
+        if (alive) setImgUrl(imgCache.get(cacheKey)!);
+        return;
+      }
+
+      const url = await getFlowerProfileUrl(id);
       if (!alive) return;
-      if (url) imgCache.set(id, url);
+      if (url) imgCache.set(cacheKey, url);
       setImgUrl(url);
-    });
+    };
+
+    resolve();
 
     return () => {
       alive = false;
     };
-  }, [current?.profileImageId]);
+  }, [current?.profileImagePath, current?.photoURL, current?.aiPhotoURL, current?.profileImageId]);
 
   /* ---- 파생 데이터 (current 기반) ---- */
   const showImg = !!imgUrl && !imgFailed;

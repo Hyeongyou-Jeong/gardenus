@@ -11,7 +11,7 @@ import {
 } from "@/auth/verifyStudentId";
 import { useMyFlower } from "@/domains/user/useMyFlower";
 import { storage } from "@/infra/firebase/storage";
-import { ref, uploadBytes } from "firebase/storage";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { color, radius, typo } from "@gardenus/shared";
 
 /* ---------- Toggle Component ---------- */
@@ -101,6 +101,8 @@ export const MePage: React.FC = () => {
   const [schoolVerifyResponse, setSchoolVerifyResponse] =
     useState<VerifyStudentIdResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [avatarFailed, setAvatarFailed] = useState(false);
 
   /* ---- 접근 제어 ---- */
   useEffect(() => {
@@ -271,6 +273,40 @@ export const MePage: React.FC = () => {
 
   const displayName = profile?.name ?? "이름 없음";
   const displayPhone = phone || "전화번호 없음";
+  const profileImagePath = profile?.profileImagePath?.trim();
+  const profileDirectUrl = (profile?.photoURL ?? profile?.aiPhotoURL)?.trim();
+
+  useEffect(() => {
+    let alive = true;
+    setAvatarFailed(false);
+
+    const resolveAvatar = async () => {
+      if (profileImagePath) {
+        try {
+          const url = await getDownloadURL(ref(storage, profileImagePath));
+          if (!alive) return;
+          setAvatarUrl(url);
+          return;
+        } catch {
+          // profileImagePath URL 변환 실패 시 direct URL로 폴백
+        }
+      }
+
+      if (profileDirectUrl) {
+        if (!alive) return;
+        setAvatarUrl(profileDirectUrl);
+        return;
+      }
+
+      if (!alive) return;
+      setAvatarUrl(null);
+    };
+
+    void resolveAvatar();
+    return () => {
+      alive = false;
+    };
+  }, [profileImagePath, profileDirectUrl]);
 
   return (
     <div style={styles.page}>
@@ -280,9 +316,18 @@ export const MePage: React.FC = () => {
         {/* 프로필 섹션 */}
         <div style={styles.profileCard}>
           <div style={styles.avatar}>
-            <svg width="48" height="48" viewBox="0 0 24 24" fill={color.gray400}>
-              <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z" />
-            </svg>
+            {avatarUrl && !avatarFailed ? (
+              <img
+                src={avatarUrl}
+                alt="내 프로필 이미지"
+                style={styles.avatarImage}
+                onError={() => setAvatarFailed(true)}
+              />
+            ) : (
+              <svg width="48" height="48" viewBox="0 0 24 24" fill={color.gray400}>
+                <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z" />
+              </svg>
+            )}
           </div>
           <div style={{ flex: 1 }}>
             {profileLoading ? (
@@ -581,6 +626,12 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
+    overflow: "hidden",
+  },
+  avatarImage: {
+    width: "100%",
+    height: "100%",
+    objectFit: "cover" as const,
   },
   profileName: {
     ...typo.heading,
