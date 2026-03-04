@@ -9,45 +9,11 @@ const params_1 = require("firebase-functions/params");
 const firestore_1 = require("firebase-admin/firestore");
 const storage_1 = require("firebase-admin/storage");
 const openai_1 = __importDefault(require("openai"));
+const avatarPromptBuilder_1 = require("./avatarPromptBuilder");
 const db = (0, firestore_1.getFirestore)();
 const storage = (0, storage_1.getStorage)();
 const OPENAI_API_KEY = (0, params_1.defineSecret)("OPENAI_API_KEY");
 const AVATAR_COUNT = 4;
-const FIXED_AVATAR_PROMPT = `Create a single square 1:1 profile avatar.
-
-Style: stylized 3D cartoon character, simple clean shapes, soft pastel black and white color palette.
-NOT photorealistic. NOT realistic. NOT human-like proportions.
-More like a character illustration than a real animal.
-
-Subject:
-Adorable anthropomorphic hamster character.
-total body view, 1:1 ratio torso and head, centered but with breathing room.
-Body proportions cartoonish (rounded shapes, simplified limbs).
-
-Face:
-Moderately large expressive eyes,
-small nose,
-soft rounded cheeks,
-friendly confident smile.
-Cute but not childish.
-
-Action:
-playing a videa game
-Keep the pose elegant and relaxed (not exaggerated, not dramatic).
-
-Background:
-Clean pastel black and white background with ONE subtle soft music-note silhouette or faint light glow behind the character.
-Minimal and uncluttered.
-
-Outfit:
-Simple sporty hoodie, no complex patterns.
-
-Avoid:
-realistic fur texture, realistic lighting, excessive detail, complex background,
-dramatic rockstar pose, exaggerated motion, ugly, creepy, scary, grotesque, meme,
-deformed, extra limbs, blurry.
-
-No text, no watermark, no logo.`;
 exports.generateProfileAvatars = (0, https_1.onCall)({
     region: "asia-northeast3",
     secrets: [OPENAI_API_KEY],
@@ -62,13 +28,19 @@ exports.generateProfileAvatars = (0, https_1.onCall)({
         throw new https_1.HttpsError("failed-precondition", "OPENAI_API_KEY가 설정되지 않았습니다.");
     }
     const uid = request.auth.uid;
+    const email = request.auth.token.email;
+    const phone = request.auth.token.phone_number;
     const genId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     console.info("[generateProfileAvatars] start", { uid, genId });
     try {
+        const userRef = await resolveUserRef(uid, email, phone);
+        const userSnap = await userRef.get();
+        const profile = (userSnap.data() ?? {});
+        const prompt = (0, avatarPromptBuilder_1.buildAvatarPrompt)(toAvatarPromptInput(profile, request.data?.animal));
         const client = new openai_1.default({ apiKey });
         const imageResponse = await client.images.generate({
             model: "gpt-image-1.5",
-            prompt: FIXED_AVATAR_PROMPT,
+            prompt,
             n: AVATAR_COUNT,
             size: "1024x1024",
             quality: "low",
@@ -191,5 +163,64 @@ function extractLoginIdFromEmail(email) {
         return null;
     const m = email.toLowerCase().match(/^([^@]+)@gardenus\.local$/);
     return m?.[1] ?? null;
+}
+function toAvatarPromptInput(profile, requestedAnimal) {
+    const rawGender = profile.gender;
+    const gender = rawGender === true
+        ? "male"
+        : rawGender === false
+            ? "female"
+            : rawGender === "male" || rawGender === "female" || rawGender === "other"
+                ? rawGender
+                : "other";
+    const rawAnimal = requestedAnimal ?? profile.animal ?? profile.avatarAnimal;
+    const animal = mapAnimalForPrompt(rawAnimal);
+    const rawInterests = profile.interests;
+    const interests = Array.isArray(rawInterests)
+        ? rawInterests.filter((v) => typeof v === "string")
+        : null;
+    const rawTraits = profile.traits ?? profile.features;
+    const traits = Array.isArray(rawTraits)
+        ? rawTraits.filter((v) => typeof v === "string")
+        : null;
+    return {
+        gender,
+        animal,
+        interests,
+        traits,
+    };
+}
+function mapAnimalForPrompt(value) {
+    if (typeof value !== "string")
+        return null;
+    const raw = value.trim();
+    if (!raw)
+        return null;
+    const lower = raw.toLowerCase();
+    const mapped = {
+        "ai recommand": null,
+        cat: "cat",
+        fox: "fox",
+        doberman: "doberman dog",
+        retreiver: "retriever dog",
+        bichon: "bichon dog",
+        maltipoo: "maltipoo dog",
+        omit: "tiger",
+        "brown bear": "brown bear",
+        otter: "otter",
+        "teddy bear": "teddy bear",
+        hamster: "hamster",
+        panda: "panda",
+        rabbit: "rabbit",
+        "fennec fox": "fennec fox",
+        orca: "orca",
+        hedgehog: "hedgehog",
+        sheep: "sheep",
+        marten: "marten",
+    };
+    if (Object.prototype.hasOwnProperty.call(mapped, lower)) {
+        return mapped[lower];
+    }
+    return raw;
 }
 //# sourceMappingURL=profileAvatarCandidates.js.map

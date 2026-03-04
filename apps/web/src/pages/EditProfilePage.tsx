@@ -407,6 +407,28 @@ interface AvatarCandidateView {
   imageUrl: string;
 }
 
+const ANIMAL_OPTIONS: Array<{ label: string; value: string }> = [
+  { label: "AI 추천", value: "AI Recommand" },
+  { label: "고양이", value: "Cat" },
+  { label: "여우", value: "Fox" },
+  { label: "강아지-도베르만", value: "Doberman" },
+  { label: "강아지-리트리버", value: "Retreiver" },
+  { label: "강아지-비숑", value: "Bichon" },
+  { label: "강아지-말티푸", value: "Maltipoo" },
+  { label: "호랑이", value: "Omit" },
+  { label: "불곰", value: "Brown Bear" },
+  { label: "수달", value: "Otter" },
+  { label: "곰돌이", value: "Teddy Bear" },
+  { label: "햄스터", value: "Hamster" },
+  { label: "팬더", value: "Panda" },
+  { label: "토끼", value: "Rabbit" },
+  { label: "사막여우", value: "Fennec fox" },
+  { label: "범고래", value: "Orca" },
+  { label: "고슴도치", value: "Hedgehog" },
+  { label: "양", value: "Sheep" },
+  { label: "담비", value: "Marten" },
+];
+
 export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" }) => {
   const navigate = useNavigate();
   const params = useParams<{ uid: string }>();
@@ -441,6 +463,8 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
   const [avatarCandidates, setAvatarCandidates] = useState<AvatarCandidateView[]>([]);
   const [avatarSelectedIndex, setAvatarSelectedIndex] = useState<number | null>(null);
   const [avatarError, setAvatarError] = useState("");
+  const [aiInfoOpen, setAiInfoOpen] = useState(false);
+  const [selectedAnimal, setSelectedAnimal] = useState<string>("AI Recommand");
   const [error, setError] = useState("");
   const initialized = useRef(false);
   const genderLocked = typeof buffer.gender === "boolean";
@@ -626,16 +650,22 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
     }
   };
 
-  const openAiAvatarModal = async () => {
-    if (isReadMode || avatarGenerating || avatarApplying) return;
+  const openAiAvatarModal = () => {
+    if (isReadMode || avatarApplying) return;
     setAvatarModalOpen(true);
+    setAvatarError("");
+  };
+
+  const handleGenerateAiAvatarCandidates = async () => {
+    if (isReadMode || avatarGenerating || avatarApplying) return;
     setAvatarCandidates([]);
     setAvatarSelectedIndex(null);
     setAvatarError("");
     setAvatarGenerating(true);
 
     try {
-      const result = await generateProfileAvatars();
+      const payloadAnimal = selectedAnimal === "AI Recommand" ? null : selectedAnimal;
+      const result = await generateProfileAvatars({ animal: payloadAnimal });
       const candidatesWithUrl = await Promise.all(
         result.candidates.map(async (candidate) => {
           const imageUrl = await getDownloadURL(ref(storage, candidate.storagePath));
@@ -759,13 +789,33 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
                 style={s.nameInput}
               />
               {!isReadMode && (
-                <button
-                  style={s.aiAvatarBtn}
-                  onClick={openAiAvatarModal}
-                  disabled={avatarGenerating || avatarApplying}
-                >
-                  {avatarGenerating ? "생성 중…" : "AI프로필 이미지 만들기"}
-                </button>
+                <div style={s.aiAvatarActions}>
+                  <button
+                    style={s.aiAvatarBtn}
+                    onClick={openAiAvatarModal}
+                    disabled={avatarApplying}
+                  >
+                    AI프로필 이미지 만들기
+                  </button>
+                  <button
+                    type="button"
+                    style={s.aiInfoBtn}
+                    aria-label="AI 프로필 이미지 안내"
+                    onMouseEnter={() => setAiInfoOpen(true)}
+                    onMouseLeave={() => setAiInfoOpen(false)}
+                    onFocus={() => setAiInfoOpen(true)}
+                    onBlur={() => setAiInfoOpen(false)}
+                    onClick={() => setAiInfoOpen((prev) => !prev)}
+                  >
+                    ?
+                  </button>
+                  {aiInfoOpen && (
+                    <div style={s.aiInfoTooltip} role="tooltip">
+                      작성하신 프로필을 분석해서 AI가 사용자에게 잘 어울리는 동물 프로필 사진으르
+                      만들어 줘요!
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -937,6 +987,21 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
           onConfirm={handleApplyAiAvatar}
         >
           <div style={s.aiModalContent}>
+            <div style={s.aiSelectRow}>
+              <span style={s.aiSelectLabel}>동물 선택</span>
+              <select
+                value={selectedAnimal}
+                onChange={(e) => setSelectedAnimal(e.target.value)}
+                disabled={avatarGenerating || avatarApplying}
+                style={s.aiSelect}
+              >
+                {ANIMAL_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             {avatarGenerating && <p style={s.aiHelperText}>이미지 4장을 생성 중입니다…</p>}
             {!avatarGenerating && avatarCandidates.length > 0 && (
               <div style={s.aiGrid}>
@@ -962,15 +1027,15 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
               </div>
             )}
             {!avatarGenerating && avatarCandidates.length === 0 && !avatarError && (
-              <p style={s.aiHelperText}>후보 이미지가 없습니다. 다시 시도해주세요.</p>
+              <p style={s.aiHelperText}>생성하기를 눌러 후보 이미지 4장을 만들어주세요.</p>
             )}
             {avatarError && <p style={s.aiErrorText}>{avatarError}</p>}
             <button
               style={s.aiRetryBtn}
-              onClick={openAiAvatarModal}
+              onClick={handleGenerateAiAvatarCandidates}
               disabled={avatarGenerating || avatarApplying}
             >
-              {avatarGenerating ? "생성 중…" : "다시 생성"}
+              {avatarGenerating ? "생성 중…" : avatarCandidates.length > 0 ? "다시 생성" : "생성하기"}
             </button>
           </div>
         </Modal>
@@ -1149,11 +1214,67 @@ const s: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     cursor: "pointer",
   },
+  aiAvatarActions: {
+    marginTop: 8,
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    position: "relative",
+  },
+  aiInfoBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: "50%",
+    background: color.gray200,
+    color: color.gray700,
+    ...typo.caption,
+    fontWeight: 700,
+    lineHeight: "24px",
+    textAlign: "center" as const,
+    cursor: "help",
+    flexShrink: 0,
+  },
+  aiInfoTooltip: {
+    position: "absolute",
+    top: "calc(100% + 8px)",
+    right: 0,
+    width: 240,
+    padding: "10px 12px",
+    borderRadius: radius.md,
+    background: color.white,
+    border: `1px solid ${color.gray200}`,
+    boxShadow: shadow.card,
+    color: color.gray700,
+    ...typo.caption,
+    lineHeight: 1.5,
+    textAlign: "left" as const,
+    zIndex: 5,
+  },
   aiModalContent: {
     display: "flex",
     flexDirection: "column",
     gap: 10,
     marginTop: 6,
+  },
+  aiSelectRow: {
+    display: "grid",
+    gap: 6,
+    textAlign: "left" as const,
+  },
+  aiSelectLabel: {
+    ...typo.caption,
+    color: color.gray600,
+    fontWeight: 700,
+  },
+  aiSelect: {
+    width: "100%",
+    border: `1px solid ${color.gray300}`,
+    borderRadius: radius.md,
+    padding: "8px 10px",
+    background: color.white,
+    color: color.gray800,
+    ...typo.body,
+    outline: "none",
   },
   aiHelperText: {
     ...typo.caption,

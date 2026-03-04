@@ -14,6 +14,10 @@ interface GenerateProfileAvatarsResponse {
   candidates: AvatarCandidate[];
 }
 
+interface GenerateProfileAvatarsRequest {
+  animal?: string | null;
+}
+
 interface ApplyProfileAvatarRequest {
   genId: string;
   selectedIndex: number;
@@ -25,12 +29,14 @@ interface ApplyProfileAvatarResponse {
   deletedCount: number;
 }
 
-export async function generateProfileAvatars(): Promise<GenerateProfileAvatarsResponse> {
-  const callable = httpsCallable<{}, GenerateProfileAvatarsResponse>(
+export async function generateProfileAvatars(
+  payload: GenerateProfileAvatarsRequest,
+): Promise<GenerateProfileAvatarsResponse> {
+  const callable = httpsCallable<GenerateProfileAvatarsRequest, GenerateProfileAvatarsResponse>(
     functions,
     "generateProfileAvatars",
   );
-  const result = await callable({});
+  const result = await callable(payload);
   return result.data;
 }
 
