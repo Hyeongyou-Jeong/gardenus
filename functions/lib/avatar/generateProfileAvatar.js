@@ -35,9 +35,10 @@ exports.generateProfileAvatar = (0, https_1.onCall)({
     try {
         const client = new openai_1.default({ apiKey });
         const imageResponse = await client.images.generate({
-            model: "gpt-image-1-mini",
+            model: "gpt-image-1.5",
             prompt,
             size: "1024x1024",
+            quality: "low",
         });
         const base64 = imageResponse.data?.[0]?.b64_json;
         if (!base64) {

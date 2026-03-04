@@ -2,9 +2,14 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
 import { useProfile } from "@/auth/ProfileContext";
-import { Header, Button } from "@/ui";
+import { Header, Button, Modal } from "@/ui";
 import { fetchUser, upsertMyProfile } from "@/domains/user/user.repo";
-import { generateProfileAvatar } from "@/auth/generateProfileAvatar";
+import {
+  applyProfileAvatar,
+  generateProfileAvatars,
+} from "@/auth/profileAvatarCandidates";
+import { storage } from "@/infra/firebase/storage";
+import { getDownloadURL, ref } from "firebase/storage";
 import { color, radius, shadow, typo } from "@gardenus/shared";
 
 /* ================================================================
@@ -396,6 +401,12 @@ interface EditProfilePageProps {
   mode?: EditProfileMode;
 }
 
+interface AvatarCandidateView {
+  index: number;
+  storagePath: string;
+  imageUrl: string;
+}
+
 export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" }) => {
   const navigate = useNavigate();
   const params = useParams<{ uid: string }>();
@@ -423,7 +434,13 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
   const [buffer, setBuffer] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [avatarModalOpen, setAvatarModalOpen] = useState(false);
   const [avatarGenerating, setAvatarGenerating] = useState(false);
+  const [avatarApplying, setAvatarApplying] = useState(false);
+  const [avatarGenId, setAvatarGenId] = useState("");
+  const [avatarCandidates, setAvatarCandidates] = useState<AvatarCandidateView[]>([]);
+  const [avatarSelectedIndex, setAvatarSelectedIndex] = useState<number | null>(null);
+  const [avatarError, setAvatarError] = useState("");
   const [error, setError] = useState("");
   const initialized = useRef(false);
   const genderLocked = typeof buffer.gender === "boolean";
@@ -609,27 +626,93 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
     }
   };
 
-  const handleGenerateAiAvatar = async () => {
-    if (isReadMode || avatarGenerating) return;
+  const openAiAvatarModal = async () => {
+    if (isReadMode || avatarGenerating || avatarApplying) return;
+    setAvatarModalOpen(true);
+    setAvatarCandidates([]);
+    setAvatarSelectedIndex(null);
+    setAvatarError("");
     setAvatarGenerating(true);
+
     try {
-      const result = await generateProfileAvatar("3d");
-      set({
-        photoURL: result.photoURL,
-        aiPhotoURL: result.photoURL,
-      });
-      patchProfile({
-        photoURL: result.photoURL,
-        aiPhotoURL: result.photoURL,
-      });
-      alert("AI 프로필 이미지가 생성됐어요.");
+      const result = await generateProfileAvatars();
+      const candidatesWithUrl = await Promise.all(
+        result.candidates.map(async (candidate) => {
+          const imageUrl = await getDownloadURL(ref(storage, candidate.storagePath));
+          return {
+            index: candidate.index,
+            storagePath: candidate.storagePath,
+            imageUrl,
+          };
+        }),
+      );
+
+      setAvatarGenId(result.genId);
+      setAvatarCandidates(candidatesWithUrl);
+      setAvatarSelectedIndex(candidatesWithUrl[0]?.index ?? null);
     } catch (err) {
-      console.error("[EditProfile] AI avatar generate failed", err);
-      alert("AI 프로필 이미지 생성에 실패했습니다. 다시 시도해주세요.");
+      console.error("[EditProfile] AI avatar candidates generate failed", err);
+      setAvatarError("이미지 생성에 실패했습니다. 다시 시도해주세요.");
     } finally {
       setAvatarGenerating(false);
     }
   };
+
+  const handleApplyAiAvatar = async () => {
+    if (isReadMode || avatarApplying || avatarGenerating) return;
+    if (!avatarGenId || avatarSelectedIndex == null) {
+      setAvatarError("적용할 이미지를 선택해주세요.");
+      return;
+    }
+
+    setAvatarApplying(true);
+    setAvatarError("");
+    try {
+      const result = await applyProfileAvatar({
+        genId: avatarGenId,
+        selectedIndex: avatarSelectedIndex,
+      });
+      const selectedUrl = await getDownloadURL(ref(storage, result.selectedPath));
+
+      set({
+        profileImagePath: result.selectedPath,
+        photoURL: selectedUrl,
+        aiPhotoURL: selectedUrl,
+      });
+      patchProfile({
+        profileImagePath: result.selectedPath,
+        photoURL: selectedUrl,
+        aiPhotoURL: selectedUrl,
+      });
+      setAvatarModalOpen(false);
+      alert("프로필 이미지가 적용됐어요.");
+    } catch (err) {
+      console.error("[EditProfile] AI avatar apply failed", err);
+      setAvatarError("선택한 이미지 적용에 실패했습니다. 다시 시도해주세요.");
+    } finally {
+      setAvatarApplying(false);
+    }
+  };
+
+  useEffect(() => {
+    const path = buffer.profileImagePath as string | undefined;
+    if (!path) return;
+    if (buffer.photoURL || buffer.aiPhotoURL) return;
+
+    let alive = true;
+    getDownloadURL(ref(storage, path))
+      .then((url) => {
+        if (!alive) return;
+        set({ photoURL: url, aiPhotoURL: url });
+        patchProfile({ photoURL: url, aiPhotoURL: url });
+      })
+      .catch((err) => {
+        console.warn("[EditProfile] profileImagePath URL 변환 실패", err);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [buffer.profileImagePath, buffer.photoURL, buffer.aiPhotoURL, set, patchProfile]);
 
   /* ---- 렌더링 ---- */
   if (!isReadMode && (authLoading || (!isAuthed && !authLoading))) return null;
@@ -678,10 +761,10 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
               {!isReadMode && (
                 <button
                   style={s.aiAvatarBtn}
-                  onClick={handleGenerateAiAvatar}
-                  disabled={avatarGenerating}
+                  onClick={openAiAvatarModal}
+                  disabled={avatarGenerating || avatarApplying}
                 >
-                  {avatarGenerating ? "생성 중…" : "AI 프로필 이미지 만들기"}
+                  {avatarGenerating ? "생성 중…" : "AI프로필 이미지 만들기"}
                 </button>
               )}
             </div>
@@ -838,6 +921,59 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
             {saving ? "저장 중…" : "저장하기"}
           </Button>
         </div>
+      )}
+
+      {!isReadMode && (
+        <Modal
+          open={avatarModalOpen}
+          title="AI프로필 이미지 만들기"
+          description="마음에 드는 이미지를 선택한 뒤 적용하세요."
+          cancelText={avatarGenerating || avatarApplying ? "진행 중…" : "닫기"}
+          confirmText={avatarApplying ? "적용 중…" : "이 사진으로 적용"}
+          onCancel={() => {
+            if (avatarGenerating || avatarApplying) return;
+            setAvatarModalOpen(false);
+          }}
+          onConfirm={handleApplyAiAvatar}
+        >
+          <div style={s.aiModalContent}>
+            {avatarGenerating && <p style={s.aiHelperText}>이미지 4장을 생성 중입니다…</p>}
+            {!avatarGenerating && avatarCandidates.length > 0 && (
+              <div style={s.aiGrid}>
+                {avatarCandidates.map((candidate) => {
+                  const selected = avatarSelectedIndex === candidate.index;
+                  return (
+                    <button
+                      key={candidate.index}
+                      style={{
+                        ...s.aiCard,
+                        borderColor: selected ? color.mint700 : color.gray200,
+                      }}
+                      onClick={() => setAvatarSelectedIndex(candidate.index)}
+                    >
+                      <img
+                        src={candidate.imageUrl}
+                        alt={`AI 후보 ${candidate.index + 1}`}
+                        style={s.aiImage}
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {!avatarGenerating && avatarCandidates.length === 0 && !avatarError && (
+              <p style={s.aiHelperText}>후보 이미지가 없습니다. 다시 시도해주세요.</p>
+            )}
+            {avatarError && <p style={s.aiErrorText}>{avatarError}</p>}
+            <button
+              style={s.aiRetryBtn}
+              onClick={openAiAvatarModal}
+              disabled={avatarGenerating || avatarApplying}
+            >
+              {avatarGenerating ? "생성 중…" : "다시 생성"}
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );
@@ -1012,6 +1148,47 @@ const s: Record<string, React.CSSProperties> = {
     ...typo.caption,
     fontWeight: 700,
     cursor: "pointer",
+  },
+  aiModalContent: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+    marginTop: 6,
+  },
+  aiHelperText: {
+    ...typo.caption,
+    color: color.gray500,
+  },
+  aiGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 8,
+  },
+  aiCard: {
+    borderRadius: radius.md,
+    border: `2px solid ${color.gray200}`,
+    overflow: "hidden",
+    padding: 0,
+    background: color.white,
+  },
+  aiImage: {
+    width: "100%",
+    aspectRatio: "1 / 1",
+    objectFit: "cover" as const,
+    display: "block",
+  },
+  aiRetryBtn: {
+    alignSelf: "center",
+    padding: "6px 12px",
+    borderRadius: radius.full,
+    background: color.gray100,
+    color: color.gray700,
+    ...typo.caption,
+    fontWeight: 700,
+  },
+  aiErrorText: {
+    ...typo.caption,
+    color: color.danger,
   },
 
   /* -- 성별 -- */

@@ -3,8 +3,8 @@
   "private": true,
   "scripts": {
     "build": "tsc",
-    "serve": "npm run build && firebase emulators:start --only functions",
-    "deploy": "firebase deploy --only functions"
+    "serve": "npm run build && npx firebase-tools emulators:start --only functions",
+    "deploy": "npx firebase-tools deploy --only functions"
   },
   "engines": {
     "node": "20"

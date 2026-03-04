@@ -42,6 +42,9 @@ export interface UserDoc {
   department?: string;
   aboutme?: string;
   profileImageId?: string;
+  profileImagePath?: string;
+  photoURL?: string;
+  aiPhotoURL?: string;
 
   /* ---- MBTI ---- */
   mbti?: string; // e.g. "ENTP"

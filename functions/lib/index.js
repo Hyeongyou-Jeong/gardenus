@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteAccount = exports.onMatchRequestUpdated = exports.onMatchRequestCreated = exports.generateProfileAvatar = exports.verifyStudentId = exports.verifyPayment = exports.pokeChatRoom = exports.leaveChatRoom = void 0;
+exports.deleteAccount = exports.onMatchRequestUpdated = exports.onMatchRequestCreated = exports.applyProfileAvatar = exports.generateProfileAvatars = exports.generateProfileAvatar = exports.verifyStudentId = exports.verifyPayment = exports.pokeChatRoom = exports.leaveChatRoom = void 0;
 const app_1 = require("firebase-admin/app");
 const firestore_1 = require("firebase-admin/firestore");
 const https_1 = require("firebase-functions/v2/https");
@@ -134,6 +134,9 @@ var verifyStudentId_1 = require("./verification/verifyStudentId");
 Object.defineProperty(exports, "verifyStudentId", { enumerable: true, get: function () { return verifyStudentId_1.verifyStudentId; } });
 var generateProfileAvatar_1 = require("./avatar/generateProfileAvatar");
 Object.defineProperty(exports, "generateProfileAvatar", { enumerable: true, get: function () { return generateProfileAvatar_1.generateProfileAvatar; } });
+var profileAvatarCandidates_1 = require("./avatar/profileAvatarCandidates");
+Object.defineProperty(exports, "generateProfileAvatars", { enumerable: true, get: function () { return profileAvatarCandidates_1.generateProfileAvatars; } });
+Object.defineProperty(exports, "applyProfileAvatar", { enumerable: true, get: function () { return profileAvatarCandidates_1.applyProfileAvatar; } });
 var matchRequestTriggers_1 = require("./notifications/matchRequestTriggers");
 Object.defineProperty(exports, "onMatchRequestCreated", { enumerable: true, get: function () { return matchRequestTriggers_1.onMatchRequestCreated; } });
 Object.defineProperty(exports, "onMatchRequestUpdated", { enumerable: true, get: function () { return matchRequestTriggers_1.onMatchRequestUpdated; } });

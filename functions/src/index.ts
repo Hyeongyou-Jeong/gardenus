@@ -161,6 +161,10 @@ export { verifyPayment } from "./payment/verifyPayment";
 export { verifyStudentId } from "./verification/verifyStudentId";
 export { generateProfileAvatar } from "./avatar/generateProfileAvatar";
 export {
+  generateProfileAvatars,
+  applyProfileAvatar,
+} from "./avatar/profileAvatarCandidates";
+export {
   onMatchRequestCreated,
   onMatchRequestUpdated,
 } from "./notifications/matchRequestTriggers";
