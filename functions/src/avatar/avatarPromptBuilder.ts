@@ -5,6 +5,15 @@ export type AvatarPromptInput = {
   traits?: string[] | null;
 };
 
+export type AvatarPromptMeta = {
+  animal: string;
+  normalizedInterests: string[];
+  normalizedTraits: string[];
+  actionPreset: ActionPresetKey;
+  facePreset: FacePresetKey;
+  outfitPreset: OutfitPresetKey;
+};
+
 type FacePresetKey =
   | "friendly_confident"
   | "cute_shy"
@@ -24,6 +33,7 @@ type ActionPresetKey =
   | "taking_photo"
   | "drawing_sketch"
   | "jogging_lightly"
+  | "weight_training"
   | "cooking_simple"
   | "traveling_backpack";
 
@@ -107,6 +117,7 @@ const ACTION_PRESETS: Record<ActionPresetKey, string> = {
   taking_photo: "taking a photo with a small camera",
   drawing_sketch: "drawing on a sketchbook",
   jogging_lightly: "jogging lightly",
+  weight_training: "hodling a dumbbell",
   cooking_simple: "cooking something simple",
   traveling_backpack: "traveling with a tiny backpack",
 };
@@ -157,6 +168,9 @@ deformed, extra limbs, blurry.
 No text, no watermark, no logo.`;
 
 const ACTION_RULES: Array<{ keywords: string[]; preset: ActionPresetKey }> = [
+  { keywords: ["헬스"], preset: "weight_training" },
+  { keywords: ["러닝"], preset: "jogging_lightly" },
+
   { keywords: ["게임", "video game", "콘솔", "pc"], preset: "playing_video_game" },
   { keywords: ["테니스", "tennis"], preset: "playing_tennis" },
   { keywords: ["음악", "music", "기타", "피아노", "밴드"], preset: "listening_music" },
@@ -164,7 +178,6 @@ const ACTION_RULES: Array<{ keywords: string[]; preset: ActionPresetKey }> = [
   { keywords: ["카페", "커피"], preset: "drinking_coffee" },
   { keywords: ["사진", "camera"], preset: "taking_photo" },
   { keywords: ["그림", "드로잉", "drawing"], preset: "drawing_sketch" },
-  { keywords: ["러닝", "조깅", "running"], preset: "jogging_lightly" },
   { keywords: ["요리", "cooking"], preset: "cooking_simple" },
   { keywords: ["여행", "travel"], preset: "traveling_backpack" },
 ];
@@ -181,6 +194,13 @@ const FACE_RULES: Array<{ keywords: string[]; preset: FacePresetKey }> = [
 ];
 
 export function buildAvatarPrompt(input: AvatarPromptInput): string {
+  return buildAvatarPromptWithMeta(input).prompt;
+}
+
+export function buildAvatarPromptWithMeta(input: AvatarPromptInput): {
+  prompt: string;
+  meta: AvatarPromptMeta;
+} {
   const animal = sanitizeAnimal(input.animal);
   const interests = normalizeKeywords(input.interests);
   const traits = normalizeKeywords(input.traits);
@@ -193,10 +213,22 @@ export function buildAvatarPrompt(input: AvatarPromptInput): string {
     traits,
   });
 
-  return TEMPLATE.replace("{ANIMAL_LINE}", animalLine)
+  const prompt = TEMPLATE.replace("{ANIMAL_LINE}", animalLine)
     .replace("{FACE_BLOCK}", FACE_PRESETS[faceKey])
     .replace("{ACTION_BLOCK}", ACTION_PRESETS[actionKey])
     .replace("{OUTFIT_BLOCK}", OUTFIT_PRESETS[outfitKey]);
+
+  return {
+    prompt,
+    meta: {
+      animal,
+      normalizedInterests: interests,
+      normalizedTraits: traits,
+      actionPreset: actionKey,
+      facePreset: faceKey,
+      outfitPreset: outfitKey,
+    },
+  };
 }
 
 function chooseActionPreset(interests: string[]): ActionPresetKey {

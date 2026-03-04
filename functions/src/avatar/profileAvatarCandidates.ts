@@ -3,7 +3,7 @@ import { defineSecret } from "firebase-functions/params";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 import OpenAI from "openai";
-import { buildAvatarPrompt, type AvatarPromptInput } from "./avatarPromptBuilder";
+import { buildAvatarPromptWithMeta, type AvatarPromptInput } from "./avatarPromptBuilder";
 
 const db = getFirestore();
 const storage = getStorage();
@@ -59,9 +59,30 @@ export const generateProfileAvatars = onCall<GenerateProfileAvatarsRequest | und
       const userRef = await resolveUserRef(uid, email, phone);
       const userSnap = await userRef.get();
       const profile = (userSnap.data() ?? {}) as Record<string, unknown>;
-      const prompt = buildAvatarPrompt(
-        toAvatarPromptInput(profile, request.data?.animal),
-      );
+      const promptInput = toAvatarPromptInput(profile, request.data?.animal);
+      const { prompt, meta } = buildAvatarPromptWithMeta(promptInput);
+      console.info("[generateProfileAvatars] prompt input", {
+        uid,
+        userDocId: userRef.id,
+        requestedAnimal: request.data?.animal ?? null,
+        profileAnimal: (profile.animal ?? profile.avatarAnimal ?? null) as
+          | string
+          | null,
+        mappedAnimal: promptInput.animal ?? null,
+        gender: promptInput.gender,
+      });
+      console.info("[generateProfileAvatars] rule selection", {
+        uid,
+        actionPreset: meta.actionPreset,
+        facePreset: meta.facePreset,
+        outfitPreset: meta.outfitPreset,
+        normalizedInterests: meta.normalizedInterests,
+        normalizedTraits: meta.normalizedTraits,
+      });
+      console.info("[generateProfileAvatars] prompt preview", {
+        uid,
+        promptHead: prompt.slice(0, 220),
+      });
 
       const client = new OpenAI({ apiKey });
       const imageResponse = await client.images.generate({
@@ -235,6 +256,14 @@ function toAvatarPromptInput(
 
   const rawAnimal = requestedAnimal ?? profile.animal ?? profile.avatarAnimal;
   const animal = mapAnimalForPrompt(rawAnimal);
+  console.info("[generateProfileAvatars] animal mapping", {
+    requestedAnimal: requestedAnimal ?? null,
+    profileAnimal: (profile.animal ?? profile.avatarAnimal ?? null) as
+      | string
+      | null,
+    rawAnimal: (rawAnimal as string | null) ?? null,
+    mappedAnimal: animal,
+  });
 
   const rawInterests = profile.interests;
   const interests = Array.isArray(rawInterests)
@@ -269,13 +298,12 @@ function mapAnimalForPrompt(value: unknown): string | null {
     bichon: "bichon dog",
     maltipoo: "maltipoo dog",
     omit: "tiger",
-    "brown bear": "brown bear",
+    bear: "brown bear",
     otter: "otter",
-    "teddy bear": "teddy bear",
     hamster: "hamster",
     panda: "panda",
     rabbit: "rabbit",
-    "fennec fox": "fennec fox",
+    fennecfox: "fennec fox",
     orca: "orca",
     hedgehog: "hedgehog",
     sheep: "sheep",

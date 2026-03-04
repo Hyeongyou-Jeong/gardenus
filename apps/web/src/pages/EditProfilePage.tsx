@@ -416,7 +416,7 @@ const ANIMAL_OPTIONS: Array<{ label: string; value: string }> = [
   { label: "강아지-비숑", value: "Bichon" },
   { label: "강아지-말티푸", value: "Maltipoo" },
   { label: "호랑이", value: "Omit" },
-  { label: "불곰", value: "Brown Bear" },
+  { label: "곰돌이", value: "Brown Bear" },
   { label: "수달", value: "Otter" },
   { label: "곰돌이", value: "Teddy Bear" },
   { label: "햄스터", value: "Hamster" },
@@ -665,7 +665,15 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
 
     try {
       const payloadAnimal = selectedAnimal === "AI Recommand" ? null : selectedAnimal;
+      console.info("[EditProfile][AI Avatar] generate request", {
+        selectedAnimal,
+        payloadAnimal,
+      });
       const result = await generateProfileAvatars({ animal: payloadAnimal });
+      console.info("[EditProfile][AI Avatar] generate response", {
+        genId: result.genId,
+        candidateCount: result.candidates.length,
+      });
       const candidatesWithUrl = await Promise.all(
         result.candidates.map(async (candidate) => {
           const imageUrl = await getDownloadURL(ref(storage, candidate.storagePath));
@@ -698,9 +706,17 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
     setAvatarApplying(true);
     setAvatarError("");
     try {
+      console.info("[EditProfile][AI Avatar] apply request", {
+        genId: avatarGenId,
+        selectedIndex: avatarSelectedIndex,
+      });
       const result = await applyProfileAvatar({
         genId: avatarGenId,
         selectedIndex: avatarSelectedIndex,
+      });
+      console.info("[EditProfile][AI Avatar] apply response", {
+        selectedPath: result.selectedPath,
+        deletedCount: result.deletedCount,
       });
       const selectedUrl = await getDownloadURL(ref(storage, result.selectedPath));
 

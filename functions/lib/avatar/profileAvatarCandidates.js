@@ -36,7 +36,28 @@ exports.generateProfileAvatars = (0, https_1.onCall)({
         const userRef = await resolveUserRef(uid, email, phone);
         const userSnap = await userRef.get();
         const profile = (userSnap.data() ?? {});
-        const prompt = (0, avatarPromptBuilder_1.buildAvatarPrompt)(toAvatarPromptInput(profile, request.data?.animal));
+        const promptInput = toAvatarPromptInput(profile, request.data?.animal);
+        const { prompt, meta } = (0, avatarPromptBuilder_1.buildAvatarPromptWithMeta)(promptInput);
+        console.info("[generateProfileAvatars] prompt input", {
+            uid,
+            userDocId: userRef.id,
+            requestedAnimal: request.data?.animal ?? null,
+            profileAnimal: (profile.animal ?? profile.avatarAnimal ?? null),
+            mappedAnimal: promptInput.animal ?? null,
+            gender: promptInput.gender,
+        });
+        console.info("[generateProfileAvatars] rule selection", {
+            uid,
+            actionPreset: meta.actionPreset,
+            facePreset: meta.facePreset,
+            outfitPreset: meta.outfitPreset,
+            normalizedInterests: meta.normalizedInterests,
+            normalizedTraits: meta.normalizedTraits,
+        });
+        console.info("[generateProfileAvatars] prompt preview", {
+            uid,
+            promptHead: prompt.slice(0, 220),
+        });
         const client = new openai_1.default({ apiKey });
         const imageResponse = await client.images.generate({
             model: "gpt-image-1.5",
@@ -175,6 +196,12 @@ function toAvatarPromptInput(profile, requestedAnimal) {
                 : "other";
     const rawAnimal = requestedAnimal ?? profile.animal ?? profile.avatarAnimal;
     const animal = mapAnimalForPrompt(rawAnimal);
+    console.info("[generateProfileAvatars] animal mapping", {
+        requestedAnimal: requestedAnimal ?? null,
+        profileAnimal: (profile.animal ?? profile.avatarAnimal ?? null),
+        rawAnimal: rawAnimal ?? null,
+        mappedAnimal: animal,
+    });
     const rawInterests = profile.interests;
     const interests = Array.isArray(rawInterests)
         ? rawInterests.filter((v) => typeof v === "string")
@@ -206,13 +233,12 @@ function mapAnimalForPrompt(value) {
         bichon: "bichon dog",
         maltipoo: "maltipoo dog",
         omit: "tiger",
-        "brown bear": "brown bear",
+        bear: "brown bear",
         otter: "otter",
-        "teddy bear": "teddy bear",
         hamster: "hamster",
         panda: "panda",
         rabbit: "rabbit",
-        "fennec fox": "fennec fox",
+        fennecfox: "fennec fox",
         orca: "orca",
         hedgehog: "hedgehog",
         sheep: "sheep",

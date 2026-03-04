@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildAvatarPrompt = buildAvatarPrompt;
+exports.buildAvatarPromptWithMeta = buildAvatarPromptWithMeta;
 const FACE_PRESETS = {
     friendly_confident: [
         "Moderately large expressive eyes,",
@@ -68,6 +69,7 @@ const ACTION_PRESETS = {
     taking_photo: "taking a photo with a small camera",
     drawing_sketch: "drawing on a sketchbook",
     jogging_lightly: "jogging lightly",
+    weight_training: "hodling a dumbbell",
     cooking_simple: "cooking something simple",
     traveling_backpack: "traveling with a tiny backpack",
 };
@@ -123,6 +125,7 @@ const ACTION_RULES = [
     { keywords: ["사진", "camera"], preset: "taking_photo" },
     { keywords: ["그림", "드로잉", "drawing"], preset: "drawing_sketch" },
     { keywords: ["러닝", "조깅", "running"], preset: "jogging_lightly" },
+    { keywords: ["헬스", "헬스장"], preset: "weight_training" },
     { keywords: ["요리", "cooking"], preset: "cooking_simple" },
     { keywords: ["여행", "travel"], preset: "traveling_backpack" },
 ];
@@ -137,6 +140,9 @@ const FACE_RULES = [
     { keywords: ["우아", "성숙", "배려"], preset: "elegant_warm" },
 ];
 function buildAvatarPrompt(input) {
+    return buildAvatarPromptWithMeta(input).prompt;
+}
+function buildAvatarPromptWithMeta(input) {
     const animal = sanitizeAnimal(input.animal);
     const interests = normalizeKeywords(input.interests);
     const traits = normalizeKeywords(input.traits);
@@ -147,10 +153,21 @@ function buildAvatarPrompt(input) {
         gender: input.gender ?? "other",
         traits,
     });
-    return TEMPLATE.replace("{ANIMAL_LINE}", animalLine)
+    const prompt = TEMPLATE.replace("{ANIMAL_LINE}", animalLine)
         .replace("{FACE_BLOCK}", FACE_PRESETS[faceKey])
         .replace("{ACTION_BLOCK}", ACTION_PRESETS[actionKey])
         .replace("{OUTFIT_BLOCK}", OUTFIT_PRESETS[outfitKey]);
+    return {
+        prompt,
+        meta: {
+            animal,
+            normalizedInterests: interests,
+            normalizedTraits: traits,
+            actionPreset: actionKey,
+            facePreset: faceKey,
+            outfitPreset: outfitKey,
+        },
+    };
 }
 function chooseActionPreset(interests) {
     for (const rule of ACTION_RULES) {
