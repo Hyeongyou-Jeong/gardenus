@@ -1,136 +1,49 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
+import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "@/infra/firebase/client";
-import { useAuth } from "@/auth/AuthContext";
+import { upsertUser } from "@/domains/user/user.repo";
 import { Header, Button } from "@/ui";
 import { color, radius, typo } from "@gardenus/shared";
 
-function toE164(phone: string): string {
-  const digits = phone.replace(/[^0-9]/g, "");
-  if (digits.startsWith("0")) return "+82" + digits.slice(1);
-  if (digits.startsWith("82")) return "+" + digits;
-  return "+" + digits;
+function loginIdToEmail(loginId: string): string {
+  return `${loginId.trim().toLowerCase()}@gardenus.local`;
 }
-
-/*
- * TODO: 운영 배포 시 아래 줄 제거 — 테스트 번호 전용 우회
- * Firebase Console > Authentication > Phone > 테스트 번호가 등록되어 있어야 동작
- */
-(auth as any).settings.appVerificationDisabledForTesting = true;
-
-/* ================================================================
-   LoginPage — reCAPTCHA 비활성화 (테스트 모드)
-   ================================================================ */
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
-  const { setPendingPhone, setConfirmationResult } = useAuth();
 
-  const [phone, setPhone] = useState("");
-  const [sending, setSending] = useState(false);
+  const [loginId, setLoginId] = useState("");
+  const [password, setPassword] = useState("");
+  const [loggingIn, setLoggingIn] = useState(false);
   const [error, setError] = useState("");
-  const [cooldown, setCooldown] = useState(0);
-  const verifierRef = useRef<RecaptchaVerifier | null>(null);
-  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const initDone = useRef(false);
 
-  useEffect(() => {
-    return () => {
-      if (cooldownRef.current) clearInterval(cooldownRef.current);
-    };
-  }, []);
+  const handleLogin = async () => {
+    const trimmedId = loginId.trim();
+    const trimmedPw = password.trim();
+    if (!trimmedId || !trimmedPw) return;
 
-  const startCooldown = useCallback((seconds: number) => {
-    setCooldown(seconds);
-    if (cooldownRef.current) clearInterval(cooldownRef.current);
-    cooldownRef.current = setInterval(() => {
-      setCooldown((prev) => {
-        if (prev <= 1) {
-          clearInterval(cooldownRef.current!);
-          cooldownRef.current = null;
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  }, []);
-
-  /* ---- invisible reCAPTCHA (테스트 모드에서는 자동 통과) ---- */
-  const ensureVerifier = useCallback(() => {
-    if (verifierRef.current) return;
-    try {
-      verifierRef.current = new RecaptchaVerifier(
-        auth,
-        "recaptcha-container",
-        { size: "invisible" },
-      );
-    } catch (e) {
-      console.error("[reCAPTCHA] create failed", e);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (initDone.current) return;
-    initDone.current = true;
-    ensureVerifier();
-    return () => {
-      try { verifierRef.current?.clear(); } catch { /* ignore */ }
-      verifierRef.current = null;
-    };
-  }, [ensureVerifier]);
-
-  /* ---- SMS 발송 ---- */
-  const handleSend = async () => {
-    const trimmed = phone.trim();
-    if (!trimmed) return;
-
-    ensureVerifier();
-    if (!verifierRef.current) {
-      setError("초기화 실패. 페이지를 새로고침해 주세요.");
-      return;
-    }
-
-    setSending(true);
+    setLoggingIn(true);
     setError("");
 
     try {
-      const e164 = toE164(trimmed);
-      console.log("[LoginPage] sending SMS to", e164);
-
-      const result = await signInWithPhoneNumber(
-        auth,
-        e164,
-        verifierRef.current,
-      );
-      setConfirmationResult(result);
-      setPendingPhone(trimmed);
-      navigate("/verify");
+      const email = loginIdToEmail(trimmedId);
+      await signInWithEmailAndPassword(auth, email, trimmedPw);
+      // 회원가입 중 users 문서 저장이 실패했을 수 있어 로그인 시 보정 시도
+      await upsertUser(trimmedId.toLowerCase(), {
+        loginId: trimmedId.toLowerCase(),
+        authUid: auth.currentUser?.uid,
+        phoneNumber: auth.currentUser?.phoneNumber ?? undefined,
+        authProvider: "password_phone",
+      }).catch((e) => {
+        console.warn("[LoginPage] user doc backfill skipped", e);
+      });
+      navigate("/");
     } catch (err: any) {
-      const code = err?.code ?? "unknown";
-      console.error("[send sms failed]", { code, raw: err });
-
-      if (code === "auth/too-many-requests") {
-        setError(
-          "요청이 많아 SMS 발송이 일시 제한되었습니다.\n" +
-          "잠시 후 다시 시도해 주세요.",
-        );
-        try { verifierRef.current?.clear(); } catch { /* ignore */ }
-        verifierRef.current = null;
-        startCooldown(30);
-      } else if (
-        code === "auth/captcha-check-failed" ||
-        code === "auth/invalid-app-credential"
-      ) {
-        setError("인증에 실패했습니다. 다시 시도해 주세요.");
-        try { verifierRef.current?.clear(); } catch { /* ignore */ }
-        verifierRef.current = null;
-        ensureVerifier();
-      } else {
-        setError(`발송 실패: ${code}`);
-      }
+      console.error("[LoginPage] login failed", err);
+      setError("아이디 또는 비밀번호가 올바르지 않습니다.");
     } finally {
-      setSending(false);
+      setLoggingIn(false);
     }
   };
 
@@ -139,41 +52,38 @@ export const LoginPage: React.FC = () => {
       <Header title="로그인" showBack />
 
       <div style={styles.content}>
-        <label style={styles.label}>전화번호</label>
+        <label style={styles.label}>아이디</label>
         <input
-          type="tel"
-          placeholder="전화번호를 입력해주세요."
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
+          type="text"
+          placeholder="아이디를 입력해주세요."
+          value={loginId}
+          onChange={(e) => setLoginId(e.target.value)}
+          style={styles.input}
+        />
+        <label style={{ ...styles.label, marginTop: 14 }}>비밀번호</label>
+        <input
+          type="password"
+          placeholder="비밀번호를 입력해주세요."
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
           style={styles.input}
         />
         <p style={styles.notice}>
-          전화번호는 상대방에게 절대로 공개되지 않아요.
+          계정이 없다면 회원가입 후 이용해 주세요.
         </p>
         {error && <p style={styles.error}>{error}</p>}
       </div>
 
-      {/* invisible reCAPTCHA 앵커 (화면에 표시 안 됨) */}
-      <div id="recaptcha-container" />
-
       <div style={styles.bottom}>
-        {cooldown > 0 ? (
-          <>
-            <p style={styles.cooldownText}>
-              {cooldown}초 후 재시도할 수 있습니다.
-            </p>
-            <Button onClick={undefined} disabled>
-              재시도 대기 ({cooldown}초)
-            </Button>
-          </>
-        ) : (
-          <Button
-            onClick={handleSend}
-            disabled={!phone.trim() || sending}
-          >
-            {sending ? "전송 중..." : "인증 번호 전송"}
-          </Button>
-        )}
+        <Button
+          onClick={handleLogin}
+          disabled={!loginId.trim() || !password.trim() || loggingIn}
+        >
+          {loggingIn ? "로그인 중..." : "로그인"}
+        </Button>
+        <button style={styles.signupBtn} onClick={() => navigate("/signup")}>
+          회원가입
+        </button>
       </div>
     </div>
   );
@@ -215,13 +125,18 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: 8,
     whiteSpace: "pre-line" as const,
   },
-  cooldownText: {
-    ...typo.caption,
-    color: color.gray500,
-    textAlign: "center" as const,
-    marginBottom: 8,
-  },
   bottom: {
     padding: "20px",
+  },
+  signupBtn: {
+    width: "100%",
+    marginTop: 10,
+    padding: "12px 0",
+    borderRadius: radius.lg,
+    background: color.white,
+    border: `1px solid ${color.gray300}`,
+    color: color.gray700,
+    ...typo.button,
+    cursor: "pointer",
   },
 };

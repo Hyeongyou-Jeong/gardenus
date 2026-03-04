@@ -43,12 +43,12 @@ const verifyPaymentFn = httpsCallable<
 
 export const FlowerStorePage: React.FC = () => {
   const navigate = useNavigate();
-  const { phone } = useAuth();
+  const { userId } = useAuth();
   const { flower: myFlower } = useMyFlower();
   const [buying, setBuying] = useState(false);
 
   const handleBuy = async (product: FlowerProduct) => {
-    if (!phone) {
+    if (!userId) {
       alert("로그인이 필요합니다.");
       return;
     }

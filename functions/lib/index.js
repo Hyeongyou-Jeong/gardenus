@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteAccount = exports.onMatchRequestUpdated = exports.onMatchRequestCreated = exports.verifyStudentId = exports.verifyPayment = exports.pokeChatRoom = exports.leaveChatRoom = void 0;
+exports.deleteAccount = exports.onMatchRequestUpdated = exports.onMatchRequestCreated = exports.generateProfileAvatar = exports.verifyStudentId = exports.verifyPayment = exports.pokeChatRoom = exports.leaveChatRoom = void 0;
 const app_1 = require("firebase-admin/app");
 const firestore_1 = require("firebase-admin/firestore");
 const https_1 = require("firebase-functions/v2/https");
@@ -9,6 +9,12 @@ const db = (0, firestore_1.getFirestore)();
 const POKE_WINDOW_MS = 48 * 60 * 60 * 1000;
 const POKE_MAX_COUNT = 3;
 function getCallerUid(request) {
+    const email = request.auth?.token?.email;
+    if (typeof email === "string") {
+        const m = email.toLowerCase().match(/^([^@]+)@gardenus\.local$/);
+        if (m)
+            return m[1];
+    }
     const phone = request.auth?.token?.phone_number;
     if (typeof phone === "string" && phone.trim() !== "")
         return phone;
@@ -126,6 +132,8 @@ var verifyPayment_1 = require("./payment/verifyPayment");
 Object.defineProperty(exports, "verifyPayment", { enumerable: true, get: function () { return verifyPayment_1.verifyPayment; } });
 var verifyStudentId_1 = require("./verification/verifyStudentId");
 Object.defineProperty(exports, "verifyStudentId", { enumerable: true, get: function () { return verifyStudentId_1.verifyStudentId; } });
+var generateProfileAvatar_1 = require("./avatar/generateProfileAvatar");
+Object.defineProperty(exports, "generateProfileAvatar", { enumerable: true, get: function () { return generateProfileAvatar_1.generateProfileAvatar; } });
 var matchRequestTriggers_1 = require("./notifications/matchRequestTriggers");
 Object.defineProperty(exports, "onMatchRequestCreated", { enumerable: true, get: function () { return matchRequestTriggers_1.onMatchRequestCreated; } });
 Object.defineProperty(exports, "onMatchRequestUpdated", { enumerable: true, get: function () { return matchRequestTriggers_1.onMatchRequestUpdated; } });

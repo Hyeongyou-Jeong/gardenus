@@ -7,12 +7,12 @@ import { subscribeFlower } from "@/domains/user/user.repo";
  * 로그인 상태가 아니면 flower = 0, loading = false.
  */
 export function useMyFlower() {
-  const { phone } = useAuth();
+  const { userId } = useAuth();
   const [flower, setFlower] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!phone) {
+    if (!userId) {
       setFlower(0);
       setLoading(false);
       return;
@@ -20,13 +20,13 @@ export function useMyFlower() {
 
     setLoading(true);
 
-    const unsub = subscribeFlower(phone, (val) => {
+    const unsub = subscribeFlower(userId, (val) => {
       setFlower(val);
       setLoading(false);
     });
 
     return unsub;
-  }, [phone]);
+  }, [userId]);
 
   return { flower, flowerLoading: loading };
 }

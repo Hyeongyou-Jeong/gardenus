@@ -59,11 +59,13 @@ export const verifyStudentId = onCall<VerifyStudentIdRequest>(
     }
 
     const uid = request.auth.uid;
+    const email = request.auth.token.email as string | undefined;
     const phone = request.auth.token.phone_number as string | undefined;
     const normalizedPath = storagePath.trim();
-    const userRef = await resolveUserRef(uid, phone);
+    const userRef = await resolveUserRef(uid, email, phone);
     console.info("[verifyStudentId] 시작", {
       uid,
+      email: email ?? null,
       phone: phone ?? null,
       userDocId: userRef.id,
       storagePath: normalizedPath,
@@ -169,14 +171,32 @@ export const verifyStudentId = onCall<VerifyStudentIdRequest>(
 
 async function resolveUserRef(
   uid: string,
+  email?: string,
   phone?: string,
 ): Promise<FirebaseFirestore.DocumentReference> {
+  const loginId = extractLoginIdFromEmail(email);
+  if (loginId) {
+    const loginRef = db.collection("users").doc(loginId);
+    const loginSnap = await loginRef.get();
+    if (loginSnap.exists) return loginRef;
+  }
+
+  const uidRef = db.collection("users").doc(uid);
+  const uidSnap = await uidRef.get();
+  if (uidSnap.exists) return uidRef;
+
   if (phone) {
     const phoneRef = db.collection("users").doc(phone);
     const phoneSnap = await phoneRef.get();
     if (phoneSnap.exists) return phoneRef;
   }
-  return db.collection("users").doc(uid);
+  return uidRef;
+}
+
+function extractLoginIdFromEmail(email?: string): string | null {
+  if (!email) return null;
+  const m = email.toLowerCase().match(/^([^@]+)@gardenus\.local$/);
+  return m?.[1] ?? null;
 }
 
 async function setRetryStatus(

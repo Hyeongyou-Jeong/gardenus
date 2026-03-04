@@ -18,6 +18,9 @@ export const verifyPayment = onCall<VerifyRequest>(
       throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
     }
     const uid = request.auth.uid;
+    const email = request.auth.token.email as string | undefined;
+    const loginId = extractLoginIdFromEmail(email);
+    const ownerId = loginId ?? uid;
     const { paymentId, productId } = request.data;
 
     if (!paymentId || !productId) {
@@ -63,7 +66,7 @@ export const verifyPayment = onCall<VerifyRequest>(
     }
 
     /* ---- Firestore 트랜잭션: 결제 기록 + 플라워 지급 ---- */
-    const userRef = db.collection("users").doc(uid);
+    const userRef = db.collection("users").doc(ownerId);
 
     await db.runTransaction(async (tx) => {
       const userSnap = await tx.get(userRef);
@@ -71,7 +74,7 @@ export const verifyPayment = onCall<VerifyRequest>(
         (userSnap.data()?.flower as number | undefined) ?? 0;
 
       tx.set(paymentRef, {
-        uid,
+        uid: ownerId,
         productId,
         flowerAmount: product.flowerAmount,
         amountKRW: product.priceKRW,
@@ -93,3 +96,9 @@ export const verifyPayment = onCall<VerifyRequest>(
     };
   },
 );
+
+function extractLoginIdFromEmail(email?: string): string | null {
+  if (!email) return null;
+  const m = email.toLowerCase().match(/^([^@]+)@gardenus\.local$/);
+  return m?.[1] ?? null;
+}

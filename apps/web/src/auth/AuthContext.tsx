@@ -25,7 +25,7 @@ interface AuthContextValue {
   isAuthed: boolean;
   /** 유저 전화번호 (E.164 형식) */
   phone: string;
-  /** Firebase uid */
+  /** 앱 사용자 식별자 (기본: loginId, fallback: Firebase uid) */
   userId: string;
   /** 인증 상태 초기 로딩 여부 */
   authLoading: boolean;
@@ -99,7 +99,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const isAuthed = !!user;
   const phone = user?.phoneNumber ?? "";
-  const userId = user?.uid ?? "";
+  const userId = resolveAppUserId(user);
   return (
     <AuthContext.Provider
       value={{
@@ -119,5 +119,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     </AuthContext.Provider>
   );
 };
+
+function resolveAppUserId(user: User | null): string {
+  if (!user) return "";
+  const email = user.email ?? "";
+  const domain = "@gardenus.local";
+  if (email.toLowerCase().endsWith(domain)) {
+    return email.slice(0, -domain.length).trim().toLowerCase();
+  }
+  return user.uid;
+}
 
 export const useAuth = () => useContext(AuthContext);

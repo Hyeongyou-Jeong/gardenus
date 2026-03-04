@@ -22,11 +22,13 @@ exports.verifyStudentId = (0, https_1.onCall)({
         throw new https_1.HttpsError("invalid-argument", "storagePath는 비어있지 않은 문자열이어야 합니다.");
     }
     const uid = request.auth.uid;
+    const email = request.auth.token.email;
     const phone = request.auth.token.phone_number;
     const normalizedPath = storagePath.trim();
-    const userRef = await resolveUserRef(uid, phone);
+    const userRef = await resolveUserRef(uid, email, phone);
     console.info("[verifyStudentId] 시작", {
         uid,
+        email: email ?? null,
         phone: phone ?? null,
         userDocId: userRef.id,
         storagePath: normalizedPath,
@@ -123,14 +125,31 @@ exports.verifyStudentId = (0, https_1.onCall)({
         });
     }
 });
-async function resolveUserRef(uid, phone) {
+async function resolveUserRef(uid, email, phone) {
+    const loginId = extractLoginIdFromEmail(email);
+    if (loginId) {
+        const loginRef = db.collection("users").doc(loginId);
+        const loginSnap = await loginRef.get();
+        if (loginSnap.exists)
+            return loginRef;
+    }
+    const uidRef = db.collection("users").doc(uid);
+    const uidSnap = await uidRef.get();
+    if (uidSnap.exists)
+        return uidRef;
     if (phone) {
         const phoneRef = db.collection("users").doc(phone);
         const phoneSnap = await phoneRef.get();
         if (phoneSnap.exists)
             return phoneRef;
     }
-    return db.collection("users").doc(uid);
+    return uidRef;
+}
+function extractLoginIdFromEmail(email) {
+    if (!email)
+        return null;
+    const m = email.toLowerCase().match(/^([^@]+)@gardenus\.local$/);
+    return m?.[1] ?? null;
 }
 async function setRetryStatus(userRef, reason, detectedSchool) {
     await userRef.set({

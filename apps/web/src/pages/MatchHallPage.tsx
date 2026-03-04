@@ -25,7 +25,7 @@ const imgCache = new Map<string, string>();
 
 export const MatchHallPage: React.FC = () => {
   const navigate = useNavigate();
-  const {isAuthed, phone } = useAuth();
+  const { isAuthed, userId } = useAuth();
 
   const [profiles, setProfiles] = useState<UserDoc[]>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -46,14 +46,14 @@ export const MatchHallPage: React.FC = () => {
 
   /* ---- 알림 구독 ---- */
   useEffect(() => {
-    if (!phone) return;
+    if (!userId) return;
     const unsub = subscribeMyNotifications({
-      myUid: phone,
+      myUid: userId,
       onChange: setNotifs,
       onError: (e) => console.error("[notifications]", e),
     });
     return unsub;
-  }, [phone]);
+  }, [userId]);
 
   const unreadCount = notifs.filter((n) => !n.readAt).length;
 
@@ -94,12 +94,12 @@ export const MatchHallPage: React.FC = () => {
   const loadBatch = useCallback(async (myGender?: boolean): Promise<UserDoc[]> => {
     const raw = await fetchCandidateBatch({ myGender, limitN: BATCH_SIZE });
     const fresh = raw.filter((u) => {
-      if (phone && u.id === phone) return false;
+      if (userId && u.id === userId) return false;
       if (seenIds.current.has(u.id)) return false;
       return true;
     });
     return shuffle(fresh);
-  }, [phone]);
+  }, [userId]);
 
   const markSeen = (users: UserDoc[]) => {
     users.forEach((u) => seenIds.current.add(u.id));
@@ -113,8 +113,8 @@ export const MatchHallPage: React.FC = () => {
       try {
         let gender: boolean | undefined;
 
-        if (phone) {
-          const me = await fetchUser(phone);
+        if (userId) {
+          const me = await fetchUser(userId);
           if (!alive) return;
           if (me?.isProfileVisible === false) {
             setVisibilityModal(true);
@@ -142,7 +142,7 @@ export const MatchHallPage: React.FC = () => {
     })();
 
     return () => { alive = false; };
-  }, [phone, loadBatch]);
+  }, [userId, loadBatch]);
 
   /* ---- 추가 배치 프리페치 ---- */
   const prefetch = useCallback(async () => {
@@ -253,8 +253,8 @@ export const MatchHallPage: React.FC = () => {
           style={styles.bellBtn}
           onClick={() => {
             setNotifOpen((v) => {
-              if (!v && phone && notifs.some((n) => !n.readAt)) {
-                markAllNotificationsRead(phone, notifs).catch(() => {});
+              if (!v && userId && notifs.some((n) => !n.readAt)) {
+                markAllNotificationsRead(userId, notifs).catch(() => {});
               }
               return !v;
             });
@@ -535,7 +535,7 @@ export const MatchHallPage: React.FC = () => {
         confirmText={requesting ? "요청 중…" : "요청하기"}
         onCancel={() => setMatchModal(false)}
         onConfirm={async () => {
-          if (requesting || !phone || !current?.id) return;
+          if (requesting || !userId || !current?.id) return;
           if (myFlower < FLOWER_COST) {
             setMatchModal(false);
             setFlowerModal(true);
@@ -543,7 +543,7 @@ export const MatchHallPage: React.FC = () => {
           }
           setRequesting(true);
           try {
-            const result = await createMatchRequest(phone, current.id);
+            const result = await createMatchRequest(userId, current.id);
             setMatchModal(false);
             if (result.success) {
               alert("요청을 보냈습니다.");
@@ -598,10 +598,10 @@ export const MatchHallPage: React.FC = () => {
           if (!visibilityUpdating) setVisibilityModal(false);
         }}
         onConfirm={async () => {
-          if (!phone || visibilityUpdating) return;
+          if (!userId || visibilityUpdating) return;
           setVisibilityUpdating(true);
           try {
-            await updateUserFields(phone, { isProfileVisible: true });
+            await updateUserFields(userId, { isProfileVisible: true });
             setVisibilityModal(false);
           } catch (err) {
             console.error("[MatchHall] 활성화 실패", err);

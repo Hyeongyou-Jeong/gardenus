@@ -4,6 +4,7 @@ import { useAuth } from "@/auth/AuthContext";
 import { useProfile } from "@/auth/ProfileContext";
 import { Header, Button } from "@/ui";
 import { fetchUser, upsertMyProfile } from "@/domains/user/user.repo";
+import { generateProfileAvatar } from "@/auth/generateProfileAvatar";
 import { color, radius, shadow, typo } from "@gardenus/shared";
 
 /* ================================================================
@@ -401,7 +402,7 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
   const [searchParams, setSearchParams] = useSearchParams();
   const isReadMode = mode === "read";
   const targetUid = params.uid;
-  const { isAuthed, phone, authLoading } = useAuth();
+  const { isAuthed, userId, authLoading } = useAuth();
   const { myProfile, profileLoading, patchProfile } = useProfile();
 
   /* 접근 제어 */
@@ -422,8 +423,10 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
   const [buffer, setBuffer] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [avatarGenerating, setAvatarGenerating] = useState(false);
   const [error, setError] = useState("");
   const initialized = useRef(false);
+  const genderLocked = typeof buffer.gender === "boolean";
 
   /** 버퍼 필드 부분 업데이트 (로컬만, 서버 접근 없음) */
   const set = useCallback((patch: Record<string, any>) => {
@@ -588,13 +591,13 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
       setError("이름을 입력해주세요.");
       return;
     }
-    if (!phone) return;
+    if (!userId) return;
 
     setSaving(true);
     setError("");
 
     try {
-      await upsertMyProfile(phone, buffer);
+      await upsertMyProfile(userId, buffer);
       // 전역 프로필도 즉시 반영 (서버 재조회 없이 메모리 업데이트)
       patchProfile(buffer);
       navigate("/me");
@@ -603,6 +606,28 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
       setError("저장에 실패했습니다. 다시 시도해주세요.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleGenerateAiAvatar = async () => {
+    if (isReadMode || avatarGenerating) return;
+    setAvatarGenerating(true);
+    try {
+      const result = await generateProfileAvatar("3d");
+      set({
+        photoURL: result.photoURL,
+        aiPhotoURL: result.photoURL,
+      });
+      patchProfile({
+        photoURL: result.photoURL,
+        aiPhotoURL: result.photoURL,
+      });
+      alert("AI 프로필 이미지가 생성됐어요.");
+    } catch (err) {
+      console.error("[EditProfile] AI avatar generate failed", err);
+      alert("AI 프로필 이미지 생성에 실패했습니다. 다시 시도해주세요.");
+    } finally {
+      setAvatarGenerating(false);
     }
   };
 
@@ -630,7 +655,15 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
           {/* 프로필 이미지 + 닉네임 */}
           <div style={s.profileRow}>
             <div style={s.flowerCircle}>
-              <span style={{ fontSize: 30 }}>🌷</span>
+              {buffer.photoURL || buffer.aiPhotoURL ? (
+                <img
+                  src={(buffer.photoURL ?? buffer.aiPhotoURL) as string}
+                  alt="프로필 이미지"
+                  style={s.profileImage}
+                />
+              ) : (
+                <span style={{ fontSize: 30 }}>🌷</span>
+              )}
             </div>
             <div style={{ flex: 1 }}>
               <span style={s.fieldHint}>닉네임</span>
@@ -642,6 +675,15 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
                 readOnly={isReadMode}
                 style={s.nameInput}
               />
+              {!isReadMode && (
+                <button
+                  style={s.aiAvatarBtn}
+                  onClick={handleGenerateAiAvatar}
+                  disabled={avatarGenerating}
+                >
+                  {avatarGenerating ? "생성 중…" : "AI 프로필 이미지 만들기"}
+                </button>
+              )}
             </div>
           </div>
 
@@ -657,15 +699,17 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
               {[true, false].map((g) => (
                 <button
                   key={String(g)}
-                  onClick={() => !isReadMode && set({ gender: g })}
-                  disabled={isReadMode}
+                  onClick={() =>
+                    !isReadMode && !genderLocked && set({ gender: g })
+                  }
+                  disabled={isReadMode || genderLocked}
                   style={{
                     ...s.genderBtn,
                     borderColor: buffer.gender === g ? color.mint500 : color.gray300,
                     color: buffer.gender === g ? color.mint600 : color.gray400,
                     background: buffer.gender === g ? color.mint50 : color.white,
-                    cursor: isReadMode ? "default" : "pointer",
-                    pointerEvents: isReadMode ? "none" : "auto",
+                    cursor: isReadMode || genderLocked ? "default" : "pointer",
+                    pointerEvents: isReadMode || genderLocked ? "none" : "auto",
                   }}
                 >
                   {g ? "남자" : "여자"}
@@ -936,6 +980,12 @@ const s: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
+    overflow: "hidden",
+  },
+  profileImage: {
+    width: "100%",
+    height: "100%",
+    objectFit: "cover" as const,
   },
   fieldHint: {
     ...typo.caption,
@@ -951,6 +1001,17 @@ const s: Record<string, React.CSSProperties> = {
     outline: "none",
     width: "100%",
     padding: 0,
+  },
+  aiAvatarBtn: {
+    marginTop: 8,
+    padding: "8px 12px",
+    borderRadius: radius.full,
+    border: `1px solid ${color.mint300}`,
+    background: color.mint50,
+    color: color.mint700,
+    ...typo.caption,
+    fontWeight: 700,
+    cursor: "pointer",
   },
 
   /* -- 성별 -- */

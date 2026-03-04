@@ -29,20 +29,20 @@ const Chevron: React.FC = () => (
 
 export const ChatListPage: React.FC = () => {
   const navigate = useNavigate();
-  const { isAuthed, phone, authLoading } = useAuth();
+  const { isAuthed, userId, authLoading } = useAuth();
   const [items, setItems] = useState<AcceptedMatchItem[]>([]);
   const [loading, setLoading] = useState(true);
   const visibleItems = items.filter(
-    (item) => !(item.roomStatus === "EXPIRED" && item.expiredBy === phone),
+    (item) => !(item.roomStatus === "EXPIRED" && item.expiredBy === userId),
   );
   const nameMap = useUserNames(visibleItems.map((i) => i.otherUid));
 
   useEffect(() => {
-    if (!isAuthed || !phone) return;
+    if (!isAuthed || !userId) return;
 
     let cancelled = false;
     setLoading(true);
-    fetchAcceptedMatchesForMe(phone)
+    fetchAcceptedMatchesForMe(userId)
       .then((data) => {
         if (!cancelled) setItems(data);
       })
@@ -52,7 +52,7 @@ export const ChatListPage: React.FC = () => {
       });
 
     return () => { cancelled = true; };
-  }, [isAuthed, phone]);
+  }, [isAuthed, userId]);
 
   /* ── 로딩 ── */
   if (authLoading) {

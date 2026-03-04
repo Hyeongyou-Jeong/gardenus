@@ -55,7 +55,7 @@ export const ChatRoomPage: React.FC = () => {
   const { otherUid: rawOther } = useParams<{ otherUid: string }>();
   const otherUid = rawOther ? decodeURIComponent(rawOther) : "";
   const navigate = useNavigate();
-  const { isAuthed, phone, authLoading } = useAuth();
+  const { isAuthed, userId, authLoading } = useAuth();
 
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
@@ -85,13 +85,13 @@ export const ChatRoomPage: React.FC = () => {
     { ok: boolean; remaining: number; retryAt?: number }
   >(functions, "pokeChatRoom");
   const isRoomExpired = roomStatus === "EXPIRED";
-  const closedByOther = isRoomExpired && roomExpiredBy != null && roomExpiredBy !== phone;
+  const closedByOther = isRoomExpired && roomExpiredBy != null && roomExpiredBy !== userId;
 
   /* ── room 준비 + 메시지 구독 ── */
   useEffect(() => {
-    if (!isAuthed || !phone || !otherUid) return;
+    if (!isAuthed || !userId || !otherUid) return;
 
-    const { roomId, a, b } = makeRoomId(phone, otherUid);
+    const { roomId, a, b } = makeRoomId(userId, otherUid);
     roomIdRef.current = roomId;
 
     let unsub: (() => void) | undefined;
@@ -122,7 +122,7 @@ export const ChatRoomPage: React.FC = () => {
       unsub?.();
       unsubRoom?.();
     };
-  }, [isAuthed, phone, otherUid]);
+  }, [isAuthed, userId, otherUid]);
 
   /* ── 스크롤 하단 유지 ── */
   useEffect(() => {
@@ -150,12 +150,12 @@ export const ChatRoomPage: React.FC = () => {
   /* ── 전송 ── */
   const handleSend = async () => {
     const trimmed = text.trim();
-    if (!trimmed || sending || !phone || isRoomExpired) return;
+    if (!trimmed || sending || !userId || isRoomExpired) return;
     setSending(true);
     try {
       await sendMessage({
         roomId: roomIdRef.current,
-        senderUid: phone,
+        senderUid: userId,
         text: trimmed,
       });
       setText("");
@@ -222,7 +222,7 @@ export const ChatRoomPage: React.FC = () => {
   if (authLoading) {
     return <div style={s.loadWrap}><span style={s.muted}>로딩 중…</span></div>;
   }
-  if (!isAuthed || !phone) {
+  if (!isAuthed || !userId) {
     return <div style={s.loadWrap}><span style={s.muted}>로그인이 필요합니다.</span></div>;
   }
 
@@ -278,7 +278,7 @@ export const ChatRoomPage: React.FC = () => {
           <div style={s.centerMsg}><span style={s.muted}>첫 메시지를 보내보세요!</span></div>
         ) : (
           msgs.map((m) => {
-            const mine = m.senderUid === phone;
+            const mine = m.senderUid === userId;
             return (
               <div key={m.id} style={{ ...s.row, justifyContent: mine ? "flex-end" : "flex-start" }}>
                 <div style={mine ? s.bubbleMine : s.bubbleOther}>

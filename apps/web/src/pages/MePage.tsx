@@ -112,8 +112,8 @@ export const MePage: React.FC = () => {
   /* ---- 토글 변경 → 전역 프로필 + 서버 반영 ---- */
   const handleToggleBenefit = (v: boolean) => {
     patchProfile({ ad: v });
-    if (phone) {
-      updateUserFields(phone, { ad: v }).catch((e) =>
+    if (userId) {
+      updateUserFields(userId, { ad: v }).catch((e) =>
         console.error("[MePage] ad 토글 저장 실패", e),
       );
     }
@@ -121,8 +121,8 @@ export const MePage: React.FC = () => {
 
   const handleToggleMatch = (v: boolean) => {
     patchProfile({ isProfileVisible: v });
-    if (phone) {
-      updateUserFields(phone, { isProfileVisible: v }).catch((e) =>
+    if (userId) {
+      updateUserFields(userId, { isProfileVisible: v }).catch((e) =>
         console.error("[MePage] isProfileVisible 토글 저장 실패", e),
       );
     }
@@ -130,8 +130,8 @@ export const MePage: React.FC = () => {
 
   const handleToggleNotify = (v: boolean) => {
     patchProfile({ reminderEnabled: v });
-    if (phone) {
-      updateUserFields(phone, { reminderEnabled: v }).catch((e) =>
+    if (userId) {
+      updateUserFields(userId, { reminderEnabled: v }).catch((e) =>
         console.error("[MePage] reminderEnabled 토글 저장 실패", e),
       );
     }

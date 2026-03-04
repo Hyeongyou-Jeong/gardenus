@@ -131,7 +131,6 @@ export async function upsertUser(
   const defaults: Record<string, unknown> = {};
   if (!existing.exists()) {
     defaults.signupDate = serverTimestamp();
-    defaults.flower = data.flower ?? 0;
     defaults.reminderEnabled = data.reminderEnabled ?? false;
     defaults.ad = data.ad ?? false;
     defaults.isProfileVisible = data.isProfileVisible ?? false;

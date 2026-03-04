@@ -41,14 +41,14 @@ const ProfileContext = createContext<ProfileContextValue>({
 export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const { phone, isAuthed } = useAuth();
+  const { userId, isAuthed } = useAuth();
 
   const [myProfile, setMyProfile] = useState<UserDoc | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
 
   /* ---- 로그인 시 1회 로드 ---- */
   useEffect(() => {
-    if (!isAuthed || !phone) {
+    if (!isAuthed || !userId) {
       setMyProfile(null);
       setProfileLoading(false);
       return;
@@ -57,7 +57,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({
     let alive = true;
     setProfileLoading(true);
 
-    fetchUser(phone)
+    fetchUser(userId)
       .then((doc) => {
         if (alive) setMyProfile(doc);
       })
@@ -69,7 +69,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({
     return () => {
       alive = false;
     };
-  }, [phone, isAuthed]);
+  }, [userId, isAuthed]);
 
   /* ---- 부분 업데이트 (메모리만, 서버 접근 없음) ---- */
   const patchProfile = useCallback((patch: Partial<UserDoc>) => {
@@ -78,17 +78,17 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({
 
   /* ---- 서버에서 다시 로드 ---- */
   const refreshProfile = useCallback(async () => {
-    if (!phone) return;
+    if (!userId) return;
     setProfileLoading(true);
     try {
-      const doc = await fetchUser(phone);
+      const doc = await fetchUser(userId);
       setMyProfile(doc);
     } catch (e) {
       console.error("[ProfileContext] refresh failed", e);
     } finally {
       setProfileLoading(false);
     }
-  }, [phone]);
+  }, [userId]);
 
   return (
     <ProfileContext.Provider

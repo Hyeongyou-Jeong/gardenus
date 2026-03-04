@@ -12,6 +12,9 @@ exports.verifyPayment = (0, https_1.onCall)({ region: "asia-northeast3" }, async
         throw new https_1.HttpsError("unauthenticated", "로그인이 필요합니다.");
     }
     const uid = request.auth.uid;
+    const email = request.auth.token.email;
+    const loginId = extractLoginIdFromEmail(email);
+    const ownerId = loginId ?? uid;
     const { paymentId, productId } = request.data;
     if (!paymentId || !productId) {
         throw new https_1.HttpsError("invalid-argument", "paymentId와 productId가 필요합니다.");
@@ -40,12 +43,12 @@ exports.verifyPayment = (0, https_1.onCall)({ region: "asia-northeast3" }, async
         throw new https_1.HttpsError("failed-precondition", `결제 금액 불일치: expected ${product.priceKRW}, got ${payment.amount.total}`);
     }
     /* ---- Firestore 트랜잭션: 결제 기록 + 플라워 지급 ---- */
-    const userRef = db.collection("users").doc(uid);
+    const userRef = db.collection("users").doc(ownerId);
     await db.runTransaction(async (tx) => {
         const userSnap = await tx.get(userRef);
         const currentFlower = userSnap.data()?.flower ?? 0;
         tx.set(paymentRef, {
-            uid,
+            uid: ownerId,
             productId,
             flowerAmount: product.flowerAmount,
             amountKRW: product.priceKRW,
@@ -60,4 +63,10 @@ exports.verifyPayment = (0, https_1.onCall)({ region: "asia-northeast3" }, async
         flowerGranted: product.flowerAmount,
     };
 });
+function extractLoginIdFromEmail(email) {
+    if (!email)
+        return null;
+    const m = email.toLowerCase().match(/^([^@]+)@gardenus\.local$/);
+    return m?.[1] ?? null;
+}
 //# sourceMappingURL=verifyPayment.js.map

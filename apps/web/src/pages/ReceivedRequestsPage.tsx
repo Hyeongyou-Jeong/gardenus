@@ -71,19 +71,19 @@ const XIcon: React.FC = () => (
    ================================================================ */
 
 export const ReceivedRequestsPage: React.FC = () => {
-  const { isAuthed, phone, authLoading } = useAuth();
+  const { isAuthed, userId, authLoading } = useAuth();
   const [items, setItems] = useState<ReceivedRequestItem[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const nameMap = useUserNames(items.map((i) => i.fromUid));
 
   useEffect(() => {
-    if (!isAuthed || !phone) return;
+    if (!isAuthed || !userId) return;
 
     setListLoading(true);
     const q = query(
       collection(db, "matchRequests"),
-      where("toUid", "==", phone),
+      where("toUid", "==", userId),
       where("status", "==", "PENDING"),
     );
 
@@ -110,7 +110,7 @@ export const ReceivedRequestsPage: React.FC = () => {
     );
 
     return unsub;
-  }, [isAuthed, phone]);
+  }, [isAuthed, userId]);
 
   const handleAction = async (itemId: string, status: "ACCEPTED" | "DECLINED") => {
     if (busyId === itemId) return;

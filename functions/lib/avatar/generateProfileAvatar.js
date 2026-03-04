@@ -1,0 +1,180 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.generateProfileAvatar = void 0;
+const crypto_1 = require("crypto");
+const https_1 = require("firebase-functions/v2/https");
+const params_1 = require("firebase-functions/params");
+const firestore_1 = require("firebase-admin/firestore");
+const storage_1 = require("firebase-admin/storage");
+const openai_1 = __importDefault(require("openai"));
+const db = (0, firestore_1.getFirestore)();
+const storage = (0, storage_1.getStorage)();
+const OPENAI_API_KEY = (0, params_1.defineSecret)("OPENAI_API_KEY");
+exports.generateProfileAvatar = (0, https_1.onCall)({
+    region: "asia-northeast3",
+    secrets: [OPENAI_API_KEY],
+}, async (request) => {
+    if (!request.auth?.uid) {
+        throw new https_1.HttpsError("unauthenticated", "로그인이 필요합니다.");
+    }
+    const uid = request.auth.uid;
+    const email = request.auth.token.email;
+    const phone = request.auth.token.phone_number;
+    const style = normalizeStyle(request.data?.style);
+    const userRef = await resolveUserRef(uid, email, phone);
+    const userSnap = await userRef.get();
+    const profile = (userSnap.data() ?? {});
+    const prompt = buildAvatarPrompt(profile, style);
+    const apiKey = OPENAI_API_KEY.value();
+    if (!apiKey) {
+        throw new https_1.HttpsError("failed-precondition", "OPENAI_API_KEY가 설정되지 않았습니다.");
+    }
+    try {
+        const client = new openai_1.default({ apiKey });
+        const imageResponse = await client.images.generate({
+            model: "gpt-image-1-mini",
+            prompt,
+            size: "1024x1024",
+        });
+        const base64 = imageResponse.data?.[0]?.b64_json;
+        if (!base64) {
+            throw new Error("이미지 생성 결과가 비어 있습니다.");
+        }
+        const buffer = Buffer.from(base64, "base64");
+        const filePath = `users/${uid}/avatars/${Date.now()}.png`;
+        const file = storage.bucket().file(filePath);
+        const token = (0, crypto_1.randomUUID)();
+        await file.save(buffer, {
+            contentType: "image/png",
+            resumable: false,
+            metadata: {
+                cacheControl: "public,max-age=31536000",
+                metadata: {
+                    firebaseStorageDownloadTokens: token,
+                },
+            },
+        });
+        const bucketName = storage.bucket().name;
+        const encodedPath = encodeURIComponent(filePath);
+        const photoURL = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedPath}` +
+            `?alt=media&token=${token}`;
+        await userRef.set({
+            aiPhotoURL: photoURL,
+            photoURL,
+            updatedAt: firestore_1.FieldValue.serverTimestamp(),
+        }, { merge: true });
+        return { photoURL };
+    }
+    catch (error) {
+        console.error("[generateProfileAvatar] 실패:", error);
+        throw new https_1.HttpsError("internal", "AI 이미지 생성에 실패했습니다. 잠시 후 다시 시도해주세요.");
+    }
+});
+function normalizeStyle(value) {
+    if (value === "illustration" || value === "photo" || value === "3d") {
+        return value;
+    }
+    return "3d";
+}
+async function resolveUserRef(uid, email, phone) {
+    const loginId = extractLoginIdFromEmail(email);
+    if (loginId) {
+        const loginRef = db.collection("users").doc(loginId);
+        const loginSnap = await loginRef.get();
+        if (loginSnap.exists)
+            return loginRef;
+    }
+    const uidRef = db.collection("users").doc(uid);
+    const uidSnap = await uidRef.get();
+    if (uidSnap.exists)
+        return uidRef;
+    if (phone) {
+        const phoneRef = db.collection("users").doc(phone);
+        const phoneSnap = await phoneRef.get();
+        if (phoneSnap.exists)
+            return phoneRef;
+    }
+    return uidRef;
+}
+function extractLoginIdFromEmail(email) {
+    if (!email)
+        return null;
+    const m = email.toLowerCase().match(/^([^@]+)@gardenus\.local$/);
+    return m?.[1] ?? null;
+}
+function buildAvatarPrompt(profile, style) {
+    const name = toSafeText(profile.name);
+    const age = getAgeFromProfile(profile);
+    const school = toSafeText(profile.school);
+    const department = toSafeText(profile.department);
+    const intro = toSafeText(profile.aboutme);
+    const hobbies = toStringList(profile.interests).slice(0, 5);
+    const stylePrompt = styleToPrompt(style);
+    const safeIntroKeywords = intro
+        .split(/\s+/)
+        .map((w) => w.trim())
+        .filter(Boolean)
+        .slice(0, 8)
+        .join(", ");
+    const profileText = [
+        name ? `name: ${name}` : null,
+        age ? `age: ${age}` : null,
+        school ? `university: ${school}` : null,
+        department ? `major: ${department}` : null,
+        safeIntroKeywords ? `vibe keywords: ${safeIntroKeywords}` : null,
+        hobbies.length ? `hobbies: ${hobbies.join(", ")}` : null,
+    ]
+        .filter(Boolean)
+        .join(", ");
+    return [
+        "Create a single square profile avatar.",
+        "Safe, non-sexual.",
+        "Do not depict real people or celebrities.",
+        "No text, no watermark.",
+        stylePrompt,
+        "Pastel mint background, friendly smile, half-body centered, soft lighting.",
+        profileText ? `Profile: ${profileText}.` : "",
+    ]
+        .filter(Boolean)
+        .join(" ");
+}
+function styleToPrompt(style) {
+    if (style === "illustration") {
+        return "Style: cute illustration avatar, clean line-art, soft shading.";
+    }
+    if (style === "photo") {
+        return "Style: stylized photo-like avatar illustration, not a real human photo.";
+    }
+    return "Style: 3D cute avatar.";
+}
+function toSafeText(value) {
+    if (typeof value !== "string")
+        return "";
+    return value.trim().slice(0, 80);
+}
+function toStringList(value) {
+    if (!Array.isArray(value))
+        return [];
+    return value
+        .filter((v) => typeof v === "string")
+        .map((v) => v.trim())
+        .filter(Boolean);
+}
+function getAgeFromProfile(profile) {
+    const directAge = profile.age;
+    if (typeof directAge === "number" && Number.isFinite(directAge)) {
+        return Math.max(0, Math.floor(directAge));
+    }
+    const bornRaw = profile.born;
+    if (typeof bornRaw === "string" && /^\d{4}$/.test(bornRaw)) {
+        const bornYear = Number.parseInt(bornRaw, 10);
+        const currentYear = new Date().getFullYear();
+        const age = currentYear - bornYear + 1;
+        return age > 0 ? age : null;
+    }
+    return null;
+}
+//# sourceMappingURL=generateProfileAvatar.js.map

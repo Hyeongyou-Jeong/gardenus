@@ -2,6 +2,10 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isUserOwnerByAuthUid(loginId) {
+      return request.auth != null
+             && get(/databases/$(database)/documents/users/$(loginId)).data.authUid == request.auth.uid;
+    }
 
     // ── users/{uid} ──
     match /users/{uid} {
@@ -29,29 +33,36 @@ service cloud.firestore {
           .hasAny(protectedUserFields());
       }
 
+      function touchesImmutableGenderOnUpdate() {
+        return resource.data.gender != null
+               && request.resource.data.gender != resource.data.gender;
+      }
+
       allow read: if true;
 
       allow create: if request.auth != null
-                    && (request.auth.uid == uid
-                        || request.auth.token.phone_number == uid)
+                    && request.resource.data.loginId is string
+                    && request.resource.data.loginId == uid
+                    && request.resource.data.authUid == request.auth.uid
                     && !hasProtectedFieldsOnCreate();
 
       allow update: if request.auth != null
-                    && (request.auth.uid == uid
-                        || request.auth.token.phone_number == uid)
+                    && resource.data.authUid is string
+                    && resource.data.authUid == request.auth.uid
+                    && request.resource.data.authUid == resource.data.authUid
+                    && !touchesImmutableGenderOnUpdate()
                     && !touchesProtectedFieldsOnUpdate();
 
       // ── users/{uid}/notifications/{notifId} ──
-      // uid = phoneNumber(E.164) 기준이므로 token.phone_number 로 본인 확인
       match /notifications/{notifId} {
         allow read: if request.auth != null
-                    && request.auth.token.phone_number == uid;
+                    && isUserOwnerByAuthUid(uid);
 
         allow create: if false;
 
         // readAt 필드만 수정 허용 (읽음 처리)
         allow update: if request.auth != null
-                      && request.auth.token.phone_number == uid
+                      && isUserOwnerByAuthUid(uid)
                       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["readAt"]);
 
         allow delete: if false;
@@ -64,7 +75,7 @@ service cloud.firestore {
     }
 
     // ── matchRequests/{fromUid}_{toUid} ──
-    // fromUid/toUid는 phoneNumber(E.164) 문자열
+    // fromUid/toUid는 loginId 문자열
     match /matchRequests/{docId} {
       allow read: if request.auth != null;
 
@@ -79,17 +90,17 @@ service cloud.firestore {
                     && request.resource.data.createdAt == resource.data.createdAt
                     && (
                       // 보낸 사람: CANCELED 로만 전환 가능
-                      (request.auth.token.phone_number == resource.data.fromUid
+                      (isUserOwnerByAuthUid(resource.data.fromUid)
                        && request.resource.data.status == "CANCELED")
                       ||
                       // 받는 사람: ACCEPTED 또는 DECLINED 로만 전환 가능
-                      (request.auth.token.phone_number == resource.data.toUid
+                      (isUserOwnerByAuthUid(resource.data.toUid)
                        && request.resource.data.status in ["ACCEPTED", "DECLINED"])
                     );
 
-      // 보낸 사람만 삭제 가능 (phone_number == fromUid)
+      // 보낸 사람만 삭제 가능
       allow delete: if request.auth != null
-                    && request.auth.token.phone_number == resource.data.fromUid;
+                    && isUserOwnerByAuthUid(resource.data.fromUid);
     }
 
     // ── matches/{minUid}_{maxUid} ──

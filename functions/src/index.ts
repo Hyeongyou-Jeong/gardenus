@@ -9,6 +9,11 @@ const POKE_WINDOW_MS = 48 * 60 * 60 * 1000;
 const POKE_MAX_COUNT = 3;
 
 function getCallerUid(request: { auth?: { uid: string; token: Record<string, unknown> } }) {
+  const email = request.auth?.token?.email;
+  if (typeof email === "string") {
+    const m = email.toLowerCase().match(/^([^@]+)@gardenus\.local$/);
+    if (m) return m[1];
+  }
   const phone = request.auth?.token?.phone_number;
   if (typeof phone === "string" && phone.trim() !== "") return phone;
   return request.auth?.uid ?? "";
@@ -154,6 +159,7 @@ export const pokeChatRoom = onCall<{ roomId: string }>(
 
 export { verifyPayment } from "./payment/verifyPayment";
 export { verifyStudentId } from "./verification/verifyStudentId";
+export { generateProfileAvatar } from "./avatar/generateProfileAvatar";
 export {
   onMatchRequestCreated,
   onMatchRequestUpdated,

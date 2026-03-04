@@ -14,6 +14,9 @@ const LoginPage = lazy(() =>
 const VerifyPage = lazy(() =>
   import("@/pages/VerifyPage").then((m) => ({ default: m.VerifyPage }))
 );
+const SignupPage = lazy(() =>
+  import("@/pages/SignupPage").then((m) => ({ default: m.SignupPage }))
+);
 const MePage = lazy(() =>
   import("@/pages/MePage").then((m) => ({ default: m.MePage }))
 );
@@ -132,6 +135,7 @@ const App: React.FC = () => {
                 <Route path="/" element={<RootGate />} />
                 <Route path="/match" element={<MatchHallPage />} />
                 <Route path="/login" element={<LoginPage />} />
+                <Route path="/signup" element={<SignupPage />} />
                 <Route path="/verify" element={<VerifyPage />} />
                 <Route path="/me" element={<MePage />} />
                 <Route path="/me/edit" element={<EditProfilePage />} />

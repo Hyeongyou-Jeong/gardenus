@@ -62,7 +62,7 @@ const XIcon: React.FC = () => (
    ================================================================ */
 
 export const SentRequestsPage: React.FC = () => {
-  const { isAuthed, phone, authLoading } = useAuth();
+  const { isAuthed, userId, authLoading } = useAuth();
   const [items, setItems] = useState<SentRequestItem[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -70,12 +70,12 @@ export const SentRequestsPage: React.FC = () => {
   const nameMap = useUserNames(items.map((i) => i.toUid));
 
   useEffect(() => {
-    if (!isAuthed || !phone) return;
+    if (!isAuthed || !userId) return;
 
     setListLoading(true);
     const q = query(
       collection(db, "matchRequests"),
-      where("fromUid", "==", phone),
+      where("fromUid", "==", userId),
       where("status", "==", "PENDING"),
     );
 
@@ -102,7 +102,7 @@ export const SentRequestsPage: React.FC = () => {
     );
 
     return unsub;
-  }, [isAuthed, phone]);
+  }, [isAuthed, userId]);
 
   const handleConfirmDelete = async () => {
     const targetId = cancelTarget;
