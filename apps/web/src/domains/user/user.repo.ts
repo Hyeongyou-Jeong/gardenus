@@ -190,6 +190,33 @@ export async function upsertMyProfile(
 }
 
 /**
+ * SelectionPage 등에서 사용하는 프로필 부분 패치 저장.
+ * - 전달된 patch만 merge 반영
+ * - 보호 필드는 제거
+ */
+export async function updateMyProfilePatch(
+  uid: string,
+  patch: Record<string, any>,
+): Promise<void> {
+  const safePatch: Record<string, any> = { ...patch };
+
+  for (const key of PROTECTED_FIELDS) {
+    delete safePatch[key];
+  }
+
+  safePatch.updatedAt = serverTimestamp();
+
+  for (const key of Object.keys(safePatch)) {
+    if (safePatch[key] === undefined) {
+      delete safePatch[key];
+    }
+  }
+
+  const ref = doc(db, "users", uid);
+  await setDoc(ref, safePatch, { merge: true });
+}
+
+/**
  * users/{uid} 문서에서 특정 필드만 업데이트한다.
  * 문서가 반드시 존재해야 한다. (없으면 에러)
  *

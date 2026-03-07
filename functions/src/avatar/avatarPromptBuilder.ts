@@ -25,6 +25,7 @@ type FacePresetKey =
   | "elegant_warm";
 
 type ActionPresetKey =
+  | "watching_movie"
   | "playing_video_game"
   | "playing_tennis"
   | "listening_music"
@@ -35,7 +36,9 @@ type ActionPresetKey =
   | "jogging_lightly"
   | "weight_training"
   | "cooking_simple"
-  | "traveling_backpack";
+  | "traveling_backpack"
+  | "default_action";
+
 
 type OutfitPresetKey =
   | "sporty_hoodie"
@@ -109,6 +112,7 @@ const FACE_PRESETS: Record<FacePresetKey, string> = {
 };
 
 const ACTION_PRESETS: Record<ActionPresetKey, string> = {
+  watching_movie: "watching a movie",
   playing_video_game: "playing a video game",
   playing_tennis: "playing tennis",
   listening_music: "listening to music with headphones",
@@ -120,6 +124,8 @@ const ACTION_PRESETS: Record<ActionPresetKey, string> = {
   weight_training: "hodling a dumbbell",
   cooking_simple: "cooking something simple",
   traveling_backpack: "traveling with a tiny backpack",
+  default_action: "standing still",
+
 };
 
 const OUTFIT_PRESETS: Record<OutfitPresetKey, string> = {
@@ -168,9 +174,13 @@ deformed, extra limbs, blurry.
 No text, no watermark, no logo.`;
 
 const ACTION_RULES: Array<{ keywords: string[]; preset: ActionPresetKey }> = [
+<<<<<<< HEAD
   { keywords: ["헬스"], preset: "weight_training" },
   { keywords: ["러닝"], preset: "jogging_lightly" },
 
+=======
+  { keywords: ["영화","드라마"], preset: "watching_movie" },
+>>>>>>> 27fe3fd (AIProfile)
   { keywords: ["게임", "video game", "콘솔", "pc"], preset: "playing_video_game" },
   { keywords: ["테니스", "tennis"], preset: "playing_tennis" },
   { keywords: ["음악", "music", "기타", "피아노", "밴드"], preset: "listening_music" },
@@ -235,7 +245,7 @@ function chooseActionPreset(interests: string[]): ActionPresetKey {
   for (const rule of ACTION_RULES) {
     if (hasKeywordMatch(interests, rule.keywords)) return rule.preset;
   }
-  return "playing_video_game";
+  return "default_action";
 }
 
 function chooseFacePreset(traits: string[]): FacePresetKey {

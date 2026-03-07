@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { color, radius, typo } from "@gardenus/shared";
+import { useAuth } from "@/auth/AuthContext";
+import { updateMyProfilePatch } from "@/domains/user/user.repo";
 import {
   TRAIT_CATEGORIES,
   type TraitCategory,
@@ -37,6 +39,7 @@ const MAX_SELECT = 5;
 export const SelectionPage: React.FC = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  const { userId, isAuthed, authLoading } = useAuth();
 
   const mode = params.get("mode") ?? "traits";
   const title = params.get("title") ?? "선택";
@@ -56,6 +59,8 @@ export const SelectionPage: React.FC = () => {
   const [selected, setSelected] = useState<string[]>(initial);
   const [search, setSearch] = useState("");
   const [limitMsg, setLimitMsg] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
   /* ---- 토글 ---- */
   const toggle = (label: string) => {
@@ -87,7 +92,37 @@ export const SelectionPage: React.FC = () => {
   }, [categories, keyword]);
 
   /* ---- 확인 ---- */
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
+    const patch = toSelectionPatch(field, selected);
+    if (!patch) {
+      setError("저장할 수 없는 항목입니다. 다시 시도해주세요.");
+      return;
+    }
+    if (!isAuthed || authLoading || !userId) {
+      setError("로그인 정보를 확인 중입니다. 잠시 후 다시 시도해주세요.");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    try {
+      await updateMyProfilePatch(userId, patch);
+      console.log("[SelectionPage] saved", patch);
+    } catch (e: any) {
+      console.error("[SelectionPage] save failed", e);
+      const rawMessage = String(e?.message ?? "");
+      const rawCode = String(e?.code ?? "");
+      const isPermissionDenied =
+        rawMessage.includes("permission-denied") || rawCode.includes("permission-denied");
+      setError(
+        isPermissionDenied
+          ? `저장 권한 문제로 실패했습니다. (${rawCode || "permission-denied"})`
+          : `저장에 실패했습니다. (${rawCode || "unknown-error"})`,
+      );
+      setSaving(false);
+      return;
+    }
+
     const encoded = encodeURIComponent(JSON.stringify(selected));
     navigate(`${returnTo}?field=${field}&values=${encoded}`, {
       replace: true,
@@ -110,8 +145,12 @@ export const SelectionPage: React.FC = () => {
           </svg>
         </button>
         <h1 style={s.headerTitle}>{title}</h1>
-        <button style={s.confirmBtn} onClick={handleConfirm}>
-          확인
+        <button
+          style={s.confirmBtn}
+          onClick={() => void handleConfirm()}
+          disabled={saving || authLoading || !isAuthed}
+        >
+          {saving ? "저장 중..." : "확인"}
         </button>
       </header>
 
@@ -146,6 +185,7 @@ export const SelectionPage: React.FC = () => {
         </span>
         {limitMsg && <span style={s.limitMsg}>{limitMsg}</span>}
       </div>
+      {error && <p style={s.errorText}>{error}</p>}
 
       {/* ---- 선택된 chip 미리보기 ---- */}
       {selected.length > 0 && (
@@ -247,6 +287,11 @@ const s: Record<string, React.CSSProperties> = {
     background: "transparent",
     padding: "8px 12px",
     cursor: "pointer",
+  },
+  errorText: {
+    ...typo.caption,
+    color: color.danger,
+    padding: "0 16px",
   },
 
   /* 검색 */
@@ -352,3 +397,10 @@ const s: Record<string, React.CSSProperties> = {
     marginTop: 40,
   },
 };
+
+function toSelectionPatch(field: string, selected: string[]): Record<string, string[]> | null {
+  if (field === "myTraits") return { features: selected };
+  if (field === "interests") return { interests: selected };
+  if (field === "idealTraits") return { idealType: selected };
+  return null;
+}

@@ -61,6 +61,7 @@ const FACE_PRESETS = {
     ].join("\n"),
 };
 const ACTION_PRESETS = {
+    default_action: "standing still",
     playing_video_game: "playing a video game",
     playing_tennis: "playing tennis",
     listening_music: "listening to music with headphones",
@@ -153,8 +154,14 @@ function buildAvatarPromptWithMeta(input) {
         gender: input.gender ?? "other",
         traits,
     });
+<<<<<<< HEAD
     const prompt = TEMPLATE.replace("{ANIMAL_LINE}", animalLine)
         .replace("{FACE_BLOCK}", FACE_PRESETS[faceKey])
+=======
+    const faceBlock = withOptionalGlasses(FACE_PRESETS[faceKey], traits);
+    return TEMPLATE.replace("{ANIMAL_LINE}", animalLine)
+        .replace("{FACE_BLOCK}", faceBlock)
+>>>>>>> 27fe3fd (AIProfile)
         .replace("{ACTION_BLOCK}", ACTION_PRESETS[actionKey])
         .replace("{OUTFIT_BLOCK}", OUTFIT_PRESETS[outfitKey]);
     return {
@@ -174,7 +181,7 @@ function chooseActionPreset(interests) {
         if (hasKeywordMatch(interests, rule.keywords))
             return rule.preset;
     }
-    return "playing_video_game";
+    return "default_action";
 }
 function chooseFacePreset(traits) {
     for (const rule of FACE_RULES) {
@@ -197,6 +204,18 @@ function chooseOutfitPreset(input) {
         return input.gender === "male" ? "sweatshirt_oversized" : "knit_sweater";
     }
     return "sporty_hoodie";
+}
+function withOptionalGlasses(faceBlock, traits) {
+    const hasGlasses = hasKeywordMatch(traits, [
+        "안경",
+        "안경쓴",
+        "안경 씀",
+        "glasses",
+        "spectacles",
+    ]);
+    if (!hasGlasses)
+        return faceBlock;
+    return `${faceBlock}\nWearing thin round glasses, minimal design.`;
 }
 function sanitizeAnimal(value) {
     const raw = typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -237,6 +256,14 @@ buildAvatarPrompt({
   animal: "cat",
   interests: ["음악", "사진"],
   traits: ["쿨"],
+});
+
+샘플 4) 안경 키워드 포함
+buildAvatarPrompt({
+  gender: "other",
+  animal: "hamster",
+  interests: ["게임"],
+  traits: ["안경", "차분함"],
 });
 */
 //# sourceMappingURL=avatarPromptBuilder.js.map
