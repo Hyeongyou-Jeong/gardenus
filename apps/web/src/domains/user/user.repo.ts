@@ -1,6 +1,7 @@
 import {
   collection,
   query,
+  where,
   limit,
   getDocs,
   doc,
@@ -15,6 +16,7 @@ import {
   type Timestamp,
 } from "firebase/firestore";
 import { db } from "@/infra/firebase/client";
+import { auth } from "@/infra/firebase/client";
 
 /* ================================================================
    타입 정의 — Firestore users/{uid} 문서 구조
@@ -134,9 +136,9 @@ export async function upsertUser(
   const defaults: Record<string, unknown> = {};
   if (!existing.exists()) {
     defaults.signupDate = serverTimestamp();
-    defaults.reminderEnabled = data.reminderEnabled ?? false;
-    defaults.ad = data.ad ?? false;
-    defaults.isProfileVisible = data.isProfileVisible ?? false;
+    defaults.reminderEnabled = data.reminderEnabled ?? true;
+    defaults.ad = data.ad ?? true;
+    defaults.isProfileVisible = data.isProfileVisible ?? true;
   }
 
   await setDoc(ref, { ...defaults, ...data }, { merge: true });
@@ -185,7 +187,14 @@ export async function upsertMyProfile(
     }
   }
 
-  const ref = doc(db, "users", uid);
+  const targetDocId = await resolveWritableUserDocId(uid);
+  const currentAuthUid = auth.currentUser?.uid;
+  if (currentAuthUid) {
+    // create 시 rules(require loginId/authUid) 통과 및 기존 문서 일관성 유지
+    safe.authUid = currentAuthUid;
+    safe.loginId = targetDocId;
+  }
+  const ref = doc(db, "users", targetDocId);
   await setDoc(ref, safe, { merge: true });
 }
 
@@ -212,8 +221,39 @@ export async function updateMyProfilePatch(
     }
   }
 
-  const ref = doc(db, "users", uid);
+  const targetDocId = await resolveWritableUserDocId(uid);
+  const currentAuthUid = auth.currentUser?.uid;
+  if (currentAuthUid) {
+    safePatch.authUid = currentAuthUid;
+    safePatch.loginId = targetDocId;
+  }
+  const ref = doc(db, "users", targetDocId);
   await setDoc(ref, safePatch, { merge: true });
+}
+
+async function resolveWritableUserDocId(fallbackId: string): Promise<string> {
+  const directRef = doc(db, "users", fallbackId);
+  const directSnap = await getDoc(directRef);
+  if (directSnap.exists()) {
+    return fallbackId;
+  }
+
+  const currentAuthUid = auth.currentUser?.uid;
+  if (!currentAuthUid) {
+    return fallbackId;
+  }
+
+  const q = query(
+    collection(db, "users"),
+    where("authUid", "==", currentAuthUid),
+    limit(1),
+  );
+  const byAuthUid = await getDocs(q);
+  if (!byAuthUid.empty) {
+    return byAuthUid.docs[0].id;
+  }
+
+  return fallbackId;
 }
 
 /**

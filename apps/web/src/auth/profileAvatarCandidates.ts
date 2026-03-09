@@ -16,6 +16,7 @@ interface GenerateProfileAvatarsResponse {
 
 interface GenerateProfileAvatarsRequest {
   animal?: string | null;
+  mbti?: string | null;
 }
 
 interface ApplyProfileAvatarRequest {

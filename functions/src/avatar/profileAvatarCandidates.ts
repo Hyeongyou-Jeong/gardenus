@@ -19,6 +19,7 @@ interface GenerateProfileAvatarsResponse {
 
 interface GenerateProfileAvatarsRequest {
   animal?: string | null;
+  mbti?: string | null;
 }
 
 interface ApplyProfileAvatarRequest {
@@ -59,16 +60,22 @@ export const generateProfileAvatars = onCall<GenerateProfileAvatarsRequest | und
       const userRef = await resolveUserRef(uid, email, phone);
       const userSnap = await userRef.get();
       const profile = (userSnap.data() ?? {}) as Record<string, unknown>;
-      const promptInput = toAvatarPromptInput(profile, request.data?.animal);
+      const promptInput = toAvatarPromptInput(
+        profile,
+        request.data?.animal,
+        request.data?.mbti,
+      );
       const { prompt, meta } = buildAvatarPromptWithMeta(promptInput);
       console.info("[generateProfileAvatars] prompt input", {
         uid,
         userDocId: userRef.id,
         requestedAnimal: request.data?.animal ?? null,
+        requestedMbti: request.data?.mbti ?? null,
         profileAnimal: (profile.animal ?? profile.avatarAnimal ?? null) as
           | string
           | null,
         mappedAnimal: promptInput.animal ?? null,
+        mappedMbti: promptInput.mbti ?? null,
         gender: promptInput.gender,
       });
       console.info("[generateProfileAvatars] rule selection", {
@@ -243,6 +250,7 @@ function extractLoginIdFromEmail(email?: string): string | null {
 function toAvatarPromptInput(
   profile: Record<string, unknown>,
   requestedAnimal?: string | null,
+  requestedMbti?: string | null,
 ): AvatarPromptInput {
   const rawGender = profile.gender;
   const gender =
@@ -254,7 +262,9 @@ function toAvatarPromptInput(
           ? rawGender
           : "other";
 
-  const rawAnimal = requestedAnimal ?? profile.animal ?? profile.avatarAnimal;
+  // requestedAnimal이 null이면 "AI 추천" 의도이므로 profile 동물로 fallback하지 않음
+  const rawAnimal =
+    requestedAnimal !== undefined ? requestedAnimal : (profile.animal ?? profile.avatarAnimal);
   const animal = mapAnimalForPrompt(rawAnimal);
   console.info("[generateProfileAvatars] animal mapping", {
     requestedAnimal: requestedAnimal ?? null,
@@ -278,6 +288,12 @@ function toAvatarPromptInput(
   return {
     gender,
     animal,
+    mbti:
+      typeof requestedMbti === "string" && requestedMbti.trim()
+        ? requestedMbti
+        : typeof profile.mbti === "string"
+          ? profile.mbti
+          : null,
     interests,
     traits,
   };
@@ -293,6 +309,7 @@ function mapAnimalForPrompt(value: unknown): string | null {
     "ai recommand": null,
     cat: "cat",
     fox: "fox",
+    wolf: "wolf",
     doberman: "doberman dog",
     retreiver: "retriever dog",
     bichon: "bichon dog",

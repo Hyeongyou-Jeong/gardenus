@@ -380,10 +380,6 @@ export const MePage: React.FC = () => {
         <div style={styles.section}>
           <p style={styles.sectionTitle}>서비스 이용</p>
           <Row
-            label="가드너스의 다양한 혜택 받기"
-            right={<Toggle value={!!profile?.ad} onChange={handleToggleBenefit} />}
-          />
-          <Row
             label="플라워 스토어"
             right={
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -396,6 +392,10 @@ export const MePage: React.FC = () => {
             onClick={() => navigate("/store/flowers")}
           />
           <Row
+            label="가드너스의 다양한 혜택 받기"
+            right={<Toggle value={!!profile?.ad} onChange={handleToggleBenefit} />}
+          />
+          <Row
             label="매칭 받기"
             right={<Toggle value={!!profile?.isProfileVisible} onChange={handleToggleMatch} />}
           />
@@ -403,6 +403,8 @@ export const MePage: React.FC = () => {
             label="미응답 메시지 알림받기(오후 7시)"
             right={<Toggle value={!!profile?.reminderEnabled} onChange={handleToggleNotify} />}
           />
+          <Row label="추천인 등록하기" right={<Chevron />} onClick={() => navigate("/inquiry")} />
+          <Row label="리뷰 작성하기" right={<Chevron />} onClick={() => navigate("/review")} />
           <Row label="문의하기" right={<Chevron />} onClick={() => navigate("/inquiry")} />
           <Row label="개인정보 처리방침" right={<Chevron />} onClick={() => window.open("https://play-in.notion.site/1218855ab179804d9319d9b100d94630", "_blank")} />
           <Row label="이용약관" right={<Chevron />} onClick={() => window.open("https://play-in.notion.site/1218855ab179809b84d0e3d5040f88c1", "_blank")} />

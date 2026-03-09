@@ -1,21 +1,19 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { collection, getDocs, limit, orderBy, query } from "firebase/firestore";
-import { useAuth } from "@/auth/AuthContext";
+import { Header, TabBar } from "@/ui";
 import { db } from "@/infra/firebase/client";
-import { Button } from "@/ui";
 import { color, radius, shadow, typo } from "@gardenus/shared";
 
-const SectionCard: React.FC<{ children: React.ReactNode; style?: React.CSSProperties }> = ({
-  children,
-  style,
-}) => <div style={{ ...s.card, ...style }}>{children}</div>;
-
-const STATS = [
-  { label: "누적 가입자", value: "1,234" },
-  { label: "오늘 신규", value: "12" },
-  { label: "누적 매칭", value: "345" },
-];
+type EventItem = {
+  id: string;
+  title: string;
+  subtitle: string;
+  period: string;
+  benefit: string;
+  status: "진행중" | "곧 시작";
+  tag: string;
+};
 
 type Review = {
   id: string;
@@ -26,6 +24,36 @@ type Review = {
   text: string;
   imageUrl: string;
 };
+
+const EVENTS: EventItem[] = [
+  {
+    id: "spring-welcome",
+    title: "신규 가입 웰컴 이벤트",
+    subtitle: "첫 매칭 시작을 위한 혜택",
+    period: "2026.03.01 - 2026.03.31",
+    benefit: "가입 후 7일 이내 첫 매칭 요청 시 플라워 10개 추가 지급",
+    status: "진행중",
+    tag: "웰컴",
+  },
+  {
+    id: "school-verify",
+    title: "학교 인증 리워드 이벤트",
+    subtitle: "인증하고 바로 혜택 받기",
+    period: "상시 진행",
+    benefit: "학생증 인증 완료 시 포인트 보너스 지급 (계정당 1회)",
+    status: "진행중",
+    tag: "인증",
+  },
+  {
+    id: "weekend-coupon",
+    title: "주말 전용 쿠폰 이벤트",
+    subtitle: "금-일 한정 특별 혜택",
+    period: "매주 금 18:00 - 일 23:59",
+    benefit: "주말 동안 스토어 쿠폰팩 50% 할인",
+    status: "곧 시작",
+    tag: "쿠폰",
+  },
+];
 
 const DUMMY_REVIEWS: Review[] = [
   {
@@ -64,29 +92,10 @@ const DUMMY_REVIEWS: Review[] = [
     text: "가입 쿠폰 덕분에 진입장벽이 낮아서 시작하기 좋았고, 관심사 태그가 잘 맞는 사람을 찾는 데 꽤 도움이 됐어요.",
     imageUrl: "",
   },
-  {
-    id: "r5",
-    name: "하은",
-    age: 21,
-    gender: "여",
-    date: "2026.02.09",
-    text: "학교 인증 이후 신뢰감이 올라가서 마음이 놓였어요. 불필요한 요소가 적고 필요한 정보만 보여서 쓰기 편해요.",
-    imageUrl: "",
-  },
-  {
-    id: "r6",
-    name: "준호",
-    age: 26,
-    gender: "남",
-    date: "2026.02.03",
-    text: "가벼운 만남보다 대화가 되는 사람을 찾고 있었는데, 생각보다 취향이 맞는 분들을 금방 만날 수 있었습니다.",
-    imageUrl: "",
-  },
 ];
 
-const LandingPage: React.FC = () => {
+const MainPage: React.FC = () => {
   const navigate = useNavigate();
-  const { isAuthed } = useAuth();
 
   const [reviews, setReviews] = useState<Review[]>(DUMMY_REVIEWS);
   const [centerIndex, setCenterIndex] = useState(0);
@@ -114,7 +123,6 @@ const LandingPage: React.FC = () => {
 
   useEffect(() => {
     let mounted = true;
-
     const loadReviews = async () => {
       try {
         const q = query(
@@ -132,7 +140,7 @@ const LandingPage: React.FC = () => {
           setCenterIndex(0);
         }
       } catch (error) {
-        console.warn("[LandingPage] landingReviews fetch failed, fallback to dummy", error);
+        console.warn("[MainPage] landingReviews fetch failed, fallback to dummy", error);
       }
     };
 
@@ -170,6 +178,7 @@ const LandingPage: React.FC = () => {
     };
 
     if (count === 1) return [get(0)];
+    if (count === 2) return [get(-2), get(-1), get(0), get(1), get(2)];
     return [get(-2), get(-1), get(0), get(1), get(2)];
   }, [reviews, centerIndex]);
 
@@ -272,7 +281,6 @@ const LandingPage: React.FC = () => {
             {r.name.slice(0, 1)}
           </div>
         )}
-
         <div style={s.reviewMetaWrap}>
           <p style={s.reviewMetaMain}>
             {r.name} · {r.age} · {r.gender}
@@ -280,38 +288,20 @@ const LandingPage: React.FC = () => {
           <p style={s.reviewMetaDate}>{r.date}</p>
         </div>
       </div>
-
       <p style={s.reviewText}>{r.text}</p>
     </article>
   );
 
   return (
     <div style={s.page}>
+      <Header title="이벤트" />
       <div style={s.container}>
-        <SectionCard style={s.heroCard}>
-          <p style={s.heroBadge}>🌿 가드너스</p>
-          <h1 style={s.heroTitle}>가드너스에 오신 걸{"\n"}환영해요</h1>
-          <p style={s.heroDesc}>진심을 담은 매칭으로, 소중한 인연을 만들어보세요.</p>
+        <section style={s.heroCard}>
+          <h2 style={s.heroTitle}>후기 작성 이벤트</h2>
+          <p style={s.heroDesc}>후기 작성하고 포인트 받아가세요</p>
+        </section>
 
-          <div style={s.heroBtns}>
-            {isAuthed ? (
-              <Button onClick={() => navigate("/match")}>매칭 시작</Button>
-            ) : (
-              <>
-                <Button onClick={() => navigate("/login")}>로그인</Button>
-                <Button
-                  variant="secondary"
-                  onClick={() => navigate("/match")}
-                  style={{ marginTop: 10 }}
-                >
-                  둘러보기
-                </Button>
-              </>
-            )}
-          </div>
-        </SectionCard>
-
-        <SectionCard style={{ padding: "20px 16px" }}>
+        <section style={{ ...s.eventCard, padding: "20px 16px" }}>
           <div style={s.sectionHeaderRow}>
             <h2 style={s.sectionTitle}>솔직 이용 후기</h2>
             <button
@@ -319,7 +309,7 @@ const LandingPage: React.FC = () => {
               style={s.writeReviewBtn}
               onClick={() => navigate("/review")}
             >
-              리뷰작성하기
+              후기 작성하러 가기
             </button>
           </div>
 
@@ -346,103 +336,70 @@ const LandingPage: React.FC = () => {
               {visibleReviews.map((r, idx) => renderReviewCard(r, `${r.id}-${idx}`))}
             </div>
           </div>
-        </SectionCard>
+        </section>
 
-        <SectionCard>
-          <div style={s.statsGrid}>
-            <div style={s.statGroup}>
-              <p style={s.statGroupTitle}>설렘은 높게</p>
-              <div style={s.statChip}>
-                <span style={s.statValue}>1,284</span>
-                <span style={s.statLabel}>이용자수</span>
+        <section style={s.heroCard}>
+          <p style={s.heroBadge}>🎉 진행중인 이벤트</p>
+          <h2 style={s.heroTitle}>가드너스 혜택 모아보기</h2>
+          <p style={s.heroDesc}>
+            지금 참여 가능한 이벤트를 확인하고
+            <br />
+            더 가볍게 매칭을 시작해 보세요.
+          </p>
+        </section>
+
+        <section style={s.listWrap}>
+          {EVENTS.map((event) => (
+            <article key={event.id} style={s.eventCard}>
+              <div style={s.topRow}>
+                <span
+                  style={{
+                    ...s.statusChip,
+                    background: event.status === "진행중" ? color.mint50 : color.gray100,
+                    color: event.status === "진행중" ? color.mint700 : color.gray600,
+                  }}
+                >
+                  {event.status}
+                </span>
+                <span style={s.tagChip}>{event.tag}</span>
               </div>
-            </div>
 
-            <div style={s.statGroup}>
-              <p style={s.statGroupTitle}>허들은 낮게</p>
-              <div style={s.statChip}>
-                <span style={s.statValue}>50%</span>
-                <span style={s.statLabel}>신규 유저 할인</span>
+              <h3 style={s.eventTitle}>{event.title}</h3>
+              <p style={s.eventSubtitle}>{event.subtitle}</p>
+
+              <div style={s.infoBlock}>
+                <p style={s.infoLabel}>기간</p>
+                <p style={s.infoValue}>{event.period}</p>
               </div>
-            </div>
 
-            <div style={s.statGroup}>
-              <p style={s.statGroupTitle}>부담은 적게</p>
-              <div style={s.statChip}>
-                <span style={s.statValue}>∞</span>
-                <span style={s.statLabel}>다양한 이벤트</span>
+              <div style={s.divider} />
+
+              <div style={s.infoBlock}>
+                <p style={s.infoLabel}>혜택</p>
+                <p style={s.infoValue}>{event.benefit}</p>
               </div>
-            </div>
-          </div>
-        </SectionCard>
-
-        <div style={s.businessSection}>
-          <p style={s.businessTitle}>사업자 정보</p>
-          <div style={s.businessCard}>
-            <p style={s.businessRow}>상호명: 더가든</p>
-            <p style={s.businessRow}>대표자: 이정훈</p>
-            <p style={s.businessRow}>사업자등록번호: 702-07-02549</p>
-            <p style={s.businessRow}>통신판매업신고번호: 2023-서울성동-1168</p>
-            <p style={s.businessRow}>주소: 서울특별시 성동구 왕십리로80(성수동1가, 동아아파트)</p>
-            <p style={s.businessRow}>고객센터: 031-282-2449</p>
-            <p style={s.businessRow}>이메일: jeonghun2410@gmail.com</p>
-          </div>
-        </div>
+            </article>
+          ))}
+        </section>
       </div>
+
+      <TabBar />
     </div>
   );
 };
 
-export default LandingPage;
+export default MainPage;
 
 const s: Record<string, React.CSSProperties> = {
   page: {
     minHeight: "100vh",
     background: color.gray50,
+    paddingBottom: 84,
   },
   container: {
     maxWidth: 430,
     margin: "0 auto",
-    padding: "24px 16px 48px",
-    display: "flex",
-    flexDirection: "column",
-    gap: 16,
-  },
-  card: {
-    background: color.white,
-    borderRadius: radius.xl,
-    border: `1px solid ${color.gray200}`,
-    boxShadow: shadow.card,
-    padding: "24px 20px",
-  },
-  heroCard: {
-    background: `linear-gradient(135deg, ${color.mint50} 0%, #e8f5e9 100%)`,
-    border: "none",
-    textAlign: "center",
-    padding: "34px 22px 30px",
-  },
-  heroBadge: {
-    ...typo.caption,
-    color: color.mint700,
-    fontWeight: 600,
-    marginBottom: 12,
-  },
-  heroTitle: {
-    fontSize: 24,
-    fontWeight: 800,
-    lineHeight: "33px",
-    color: color.gray900,
-    whiteSpace: "pre-line",
-    marginBottom: 10,
-  },
-  heroDesc: {
-    ...typo.body,
-    color: color.gray600,
-    marginBottom: 22,
-  },
-  heroBtns: {
-    maxWidth: 280,
-    margin: "0 auto",
+    padding: "16px 16px 0",
   },
   sectionHeaderRow: {
     display: "flex",
@@ -456,11 +413,6 @@ const s: Record<string, React.CSSProperties> = {
     color: color.gray900,
     marginBottom: 0,
   },
-  sectionTitleSingle: {
-    ...typo.subheading,
-    color: color.gray900,
-    marginBottom: 14,
-  },
   writeReviewBtn: {
     ...typo.caption,
     color: color.mint700,
@@ -469,6 +421,7 @@ const s: Record<string, React.CSSProperties> = {
     textDecoration: "underline",
     textUnderlineOffset: 2,
     padding: 0,
+    flexShrink: 0,
   },
   reviewViewport: {
     overflow: "hidden",
@@ -481,6 +434,7 @@ const s: Record<string, React.CSSProperties> = {
     userSelect: "none",
   },
   reviewCard: {
+    scrollSnapAlign: "start",
     background: color.white,
     borderRadius: radius.xl,
     border: `1px solid ${color.gray200}`,
@@ -547,105 +501,91 @@ const s: Record<string, React.CSSProperties> = {
     wordBreak: "break-word",
     overflowWrap: "anywhere",
   },
-  reviewDotsRow: {
-    display: "flex",
-    justifyContent: "center",
-    gap: 6,
-    marginTop: 6,
-  },
-  reviewDot: {
-    width: 6,
-    height: 6,
-    borderRadius: radius.full,
-    cursor: "pointer",
-    padding: 0,
-  },
-  dataBlockWrap: {
-    borderRadius: radius.lg,
+  heroCard: {
+    borderRadius: radius.xl,
+    background: `linear-gradient(135deg, ${color.mint50} 0%, #e8f5e9 100%)`,
     border: `1px solid ${color.mint100}`,
-    background: color.mint50,
-    padding: "2px 14px",
+    padding: "18px 16px",
+    marginBottom: 14,
   },
-  dataItem: {
-    padding: "14px 2px",
+  heroBadge: {
+    ...typo.caption,
+    color: color.mint700,
+    fontWeight: 700,
+    marginBottom: 6,
   },
-  dataItemTitle: {
+  heroTitle: {
     ...typo.subheading,
     color: color.gray900,
-    fontWeight: 700,
-    marginBottom: 4,
+    marginBottom: 6,
   },
-  dataItemDesc: {
-    ...typo.body,
-    color: color.gray700,
+  heroDesc: {
+    ...typo.caption,
+    color: color.gray600,
     lineHeight: "20px",
   },
-  dataDivider: {
-    height: 1,
-    background: color.mint100,
+  listWrap: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
   },
-  businessSection: {
-    marginTop: 6,
-    padding: "2px 2px 0",
-  },
-  businessTitle: {
-    ...typo.subheading,
-    color: color.gray600,
-    marginBottom: 8,
-  },
-  businessCard: {
-    background: color.gray50,
+  eventCard: {
+    background: color.white,
     border: `1px solid ${color.gray200}`,
-    borderRadius: radius.lg,
-    padding: "16px 16px",
+    borderRadius: radius.xl,
+    boxShadow: shadow.card,
+    padding: "14px 14px 12px",
   },
-  businessRow: {
+  topRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  statusChip: {
+    ...typo.caption,
+    borderRadius: radius.full,
+    padding: "4px 10px",
+    fontWeight: 700,
+  },
+  tagChip: {
+    ...typo.caption,
+    color: color.gray600,
+    background: color.gray100,
+    borderRadius: radius.full,
+    padding: "4px 10px",
+  },
+  eventTitle: {
+    ...typo.subheading,
+    color: color.gray900,
+    marginBottom: 3,
+  },
+  eventSubtitle: {
+    ...typo.caption,
+    color: color.gray600,
+    marginBottom: 10,
+  },
+  infoBlock: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 2,
+  },
+  infoLabel: {
     ...typo.caption,
     color: color.gray500,
-    lineHeight: "21px",
-    marginBottom: 1,
   },
-  statsGrid: {
-    display: "flex",
-    gap: 10,
-    alignItems: "flex-start",
+  infoValue: {
+    ...typo.body,
+    color: color.gray800,
+    lineHeight: "20px",
+    whiteSpace: "normal",
+    wordBreak: "keep-all",
+    overflowWrap: "break-word",
   },
-  statGroup: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    gap: 8,
-  },
-  statGroupTitle: {
-    margin: 0,
-    fontSize: 14,
-    lineHeight: "18px",
-    fontWeight: 700,
-    color: color.gray900,
-    textAlign: "center",
-  },
-  statChip: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    padding: "16px 8px",
-    background: color.gray50,
-    borderRadius: radius.lg,
-    minHeight: 92,
-    textAlign: "center",
-  },
-  statValue: {
-    fontSize: 22,
-    lineHeight: "28px",
-    fontWeight: 800,
-    color: color.gray900,
-  },
-  statLabel: {
-    fontSize: 12,
-    lineHeight: "16px",
-    color: color.gray500,
+  divider: {
+    height: 1,
+    background: color.gray100,
+    margin: "10px 0",
   },
 };
 
@@ -672,7 +612,6 @@ function toReview(id: string, raw: Record<string, unknown>, index: number): Revi
 
 function normalizeDate(value: unknown): string {
   if (typeof value === "string" && value.trim()) return value.trim();
-
   if (
     typeof value === "object" &&
     value != null &&
@@ -687,6 +626,5 @@ function normalizeDate(value: unknown): string {
       return `${y}.${m}.${day}`;
     }
   }
-
   return "최근 후기";
 }

@@ -9,7 +9,7 @@ interface TabItem {
 }
 
 const tabs: TabItem[] = [
-  { path: "/LandingPage", label: "홈", icon: "🏠" },
+  { path: "/main", label: "홈", icon: "🏠" },
   { path: "/match", label: "매칭하기", icon: "🔍" },
   { path: "/like", label: "좋아요", icon: "💚" },
   { path: "/chat", label: "채팅", icon: "💬" },

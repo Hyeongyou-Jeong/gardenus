@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
 import { useProfile } from "@/auth/ProfileContext";
@@ -33,6 +33,560 @@ const PREF_LABELS: Record<string, string> = {
   jealousyLevel: "질투레벨",
   meetingPref: "선호만남유형",
 };
+
+const PREF_PLACEHOLDER = "선택해주세요.";
+const HEIGHT_OPTIONS: Array<{ label: string; value: number }> = [
+  { label: "200이상", value: 200 },
+  ...Array.from({ length: 59 }, (_, i) => {
+    const value = 199 - i; // 199 ~ 141
+    return { label: `${value}`, value };
+  }),
+  { label: "140이하", value: 140 },
+];
+const CURRENT_YEAR = new Date().getFullYear();
+const BORN_YEAR_OPTIONS = Array.from(
+  { length: CURRENT_YEAR - 1980 + 1 },
+  (_, i) => CURRENT_YEAR - i,
+);
+const JOB_OPTIONS = [
+  "대학생",
+  "대학원생",
+  "취준생",
+  "회사원",
+  "공무원",
+  "공기업",
+  "개발자",
+  "디자이너",
+  "마케터",
+  "금융권",
+  "의료직",
+  "교사",
+  "연구직",
+  "전문직",
+  "창업가",
+  "자영업",
+  "프리랜서",
+  "기타",
+];
+const RESIDENCE_OPTIONS = Array.from(
+  new Set(
+    `
+서울
+부산
+대구
+인천
+광주
+대전
+울산
+세종
+수원
+성남
+의정부
+안양
+부천
+광명
+평택
+동두천
+안산
+고양
+구리
+남양주
+오산
+시흥
+군포
+과천
+의왕
+하남
+용인
+파주
+이천
+안성
+김포
+화성
+광주
+양주
+포천
+여주
+춘천
+원주
+강릉
+동해
+태백
+속초
+삼척
+청주
+충주
+제천
+천안
+공주
+보령
+아산
+서산
+논산
+계룡
+당진
+전주
+군산
+익산
+정읍
+남원
+김제
+목포
+여수
+순천
+나주
+광양
+포항
+경주
+김천
+안동
+구미
+영주
+영천
+상주
+문경
+경산
+창원
+진주
+통영
+사천
+김해
+밀양
+거제
+양산
+제주
+서귀포
+`
+      .split("\n")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  ),
+);
+const SCHOOL_OPTIONS = Array.from(
+  new Set(
+    `
+ICT폴리텍대학
+SPC식품과학대학
+가야대학교
+가천대학교
+가톨릭관동대학교
+가톨릭꽃동네대학교
+가톨릭대학교
+가톨릭상지대학교
+감리교신학대학교
+강남대학교
+강동대학교
+강릉영동대학교
+강서대학교
+강원대학교
+강원도립대학교
+개신대학원대학교
+거제대학교
+건국대학교
+건국대학교 GLOCAL캠퍼스
+건신대학원대학교
+건양대학교
+건양사이버대학교
+겐트 대학교 글로벌캠퍼스
+경기과학기술대학교
+경기대학교
+경남대학교
+경남정보대학교
+경동대학교
+경민대학교
+경복대학교
+경북과학대학교
+경북대학교
+경북보건대학교
+경북전문대학교
+경상국립대학교
+경성대학교
+경안대학원대학교
+경운대학교
+경인교육대학교
+경인여자대학교
+경일대학교
+경찰대학
+경희대학교
+경희사이버대학교
+계명대학교
+계명문화대학교
+계원예술대학교
+고려대학교
+고려대학교 세종캠퍼스
+고려사이버대학교
+고신대학교
+공군사관학교
+공주교육대학교
+과학기술연합대학원대학교
+광신대학교
+광양보건대학교
+광운대학교
+광주가톨릭대학교
+광주과학기술원
+광주교육대학교
+광주대학교
+광주보건대학교
+광주여자대학교
+구미대학교
+구세군사관대학원대학교
+국군간호사관학교
+국립경국대학교
+국립공주대학교
+국립군산대학교
+국립금오공과대학교
+국립목포대학교
+국립목포해양대학교
+국립부경대학교
+국립순천대학교
+국립암센터국제암대학원대학교
+국립창원대학교
+국립한국교통대학교
+국립한국해양대학교
+국립한밭대학교
+국민대학교
+국방대학교
+국제뇌교육종합대학원대학교
+국제대학교
+국제법률경영대학원대학교
+국제사이버대학교
+국제언어대학원대학교
+국제예술대학교
+군산간호대학교
+군장대학교
+극동대학교
+글로벌사이버대학교
+금강대학교
+기독간호대학교
+김천대학교
+김포대학교
+김해대학교
+나사렛대학교
+나주대학교
+남부대학교
+남서울대학교
+농협대학교
+뉴욕 주립대학교 스토니브룩 한국캠퍼스
+능인대학원대학교
+단국대학교
+대경대학교
+대구가톨릭대학교
+대구경북과학기술원
+대구공업대학교
+대구과학대학교
+대구교육대학교
+대구대학교
+대구보건대학교
+대구사이버대학교
+대구예술대학교
+대구한의대학교
+대덕대학교
+대동대학교
+대림대학교
+대신대학교
+대우조선해양공과대학
+대원대학교
+대전가톨릭대학교
+대전과학기술대학교
+대전대학교
+대전보건대학교
+대전신학대학교
+대진대학교
+대한신학대학원대학교
+덕성여자대학교
+동강대학교
+동국대학교
+동국대학교 WISE캠퍼스
+동남보건대학교
+동덕여자대학교
+동명대학교
+동방문화대학원대학교
+동서대학교
+동서울대학교
+동신대학교
+동아대학교
+동아방송예술대학교
+동아보건대학교
+동양대학교
+동양미래대학교
+동원과학기술대학교
+동원대학교
+동의과학대학교
+동의대학교
+두원공과대학교
+디지털서울문화예술대학교
+루터대학교
+마산대학교
+명지대학교
+명지전문대학
+목원대학교
+목포가톨릭대학교
+목포과학대학교
+문경대학교
+배재대학교
+배화여자대학교
+백석대학교
+백석문화대학교
+백석예술대학교
+백제예술대학교
+베뢰아국제대학원대학교
+부산가톨릭대학교
+부산경상대학교
+부산과학기술대학교
+부산교육대학교
+부산대학교
+부산디지털대학교
+부산보건대학교
+부산여자대학교
+부산예술대학교
+부산외국어대학교
+부산장신대학교
+부천대학교
+북한대학원대학교
+사이버한국외국어대학교
+삼성전자공과대학교
+삼성중공업공과대학
+삼육대학교
+삼육보건대학교
+상명대학교
+상지대학교
+서강대학교
+서경대학교
+서영대학교
+서울과학기술대학교
+서울과학종합대학원대학교
+서울교육대학교
+서울기독대학교
+서울대학교
+서울디지털대학교
+서울미디어대학원대학교
+서울벤처대학원대학교
+서울불교대학원대학교
+서울사이버대학교
+서울사회복지대학원대학교
+서울상담심리대학원대학교
+서울성경신학대학원대학교
+서울시립대학교
+서울신학대학교
+서울여자간호대학교
+서울여자대학교
+서울예술대학교
+서울외국어대학원대학교
+서울장신대학교
+서울한영대학교
+서원대학교
+서일대학교
+서정대학교
+선린대학교
+선문대학교
+선학유피대학원대학교
+성결대학교
+성공회대학교
+성균관대학교
+성산효대학원대학교
+성서침례대학원대학교
+성신여자대학교
+성운대학교
+세경대학교
+세명대학교
+세종대학교
+세종사이버대학교
+세한대학교
+송곡대학교
+송원대학교
+송호대학교
+수도국제대학원대학교
+수성대학교
+수원가톨릭대학교
+수원과학대학교
+수원대학교
+수원여자대학교
+숙명여자대학교
+순복음대학원대학교
+순복음총회신학교
+순천제일대학교
+순천향대학교
+숭실대학교
+숭실사이버대학교
+숭의여자대학교
+신경주대학교
+신구대학교
+신라대학교
+신성대학교
+신안산대학교
+신한대학교
+실천신학대학원대학교
+아신대학교
+아주대학교
+아주자동차대학교
+안동과학대학교
+안산대학교
+안양대학교
+에스라성경대학원대학교
+여주대학교
+연성대학교
+연세대학교
+연세대학교 미래캠퍼스
+연암공과대학교
+연암대학교
+영남대학교
+영남신학대학교
+영남외국어대학
+영남이공대학교
+영산대학교
+영산선학대학교
+영진사이버대학교
+영진전문대학교
+예명대학원대학교
+예수대학교
+예원예술대학교
+오산대학교
+온석대학원대학교
+용인대학교
+용인예술과학대학교
+우석대학교
+우송대학교
+우송정보대학
+울산과학기술원
+울산과학대학교
+울산대학교
+웅지세무대학교
+원광대학교
+원광디지털대학교
+원불교대학원대학교
+웨스트민스터신학대학원대학교
+위덕대학교
+유원대학교
+유타 대학교 아시아 캠퍼스
+유한대학교
+육군3사관학교
+육군사관학교
+을지대학교
+이화여자대학교
+인덕대학교
+인제대학교
+인천가톨릭대학교
+인천대학교
+인하공업전문대학
+인하대학교
+장로회신학대학교
+장안대학교
+재능대학교
+전남과학대학교
+전남대학교
+전남도립대학교
+전북과학대학교
+전북대학교
+전주교육대학교
+전주기전대학
+전주대학교
+전주비전대학교
+정석대학
+정화예술대학교
+제네바신학대학원대학교
+제주관광대학교
+제주국제대학교
+제주대학교
+제주한라대학교
+조선간호대학교
+조선대학교
+조선이공대학교
+주안대학원대학교
+중부대학교
+중앙대학교
+중앙승가대학교
+중원대학교
+진주교육대학교
+진주보건대학교
+차의과학대학교
+창신대학교
+창원문성대학교
+청강문화산업대학교
+청암대학교
+청운대학교
+청주교육대학교
+청주대학교
+초당대학교
+총신대학교
+추계예술대학교
+춘천교육대학교
+춘해보건대학교
+충남대학교
+충남도립대학교
+충북대학교
+충북도립대학교
+충북보건과학대학교
+충청대학교
+치유상담대학원대학교
+칼빈대학교
+평택대학교
+포스코기술대학
+포항공과대학교
+포항대학교
+한경국립대학교
+한국개발연구원 국제정책대학원대학교
+한국골프과학기술대학교
+한국공학대학교
+한국과학기술원
+한국관광대학교
+한국교원대학교
+한국기술교육대학교
+한국농수산대학교
+한국방송통신대학교
+한국복지사이버대학교
+한국상담대학원대학교
+한국성서대학교
+한국성서대학교
+한국승강기대학교
+한국에너지공과대학교
+한국열린사이버대학교
+한국영상대학교
+한국예술종합학교
+한국외국어대학교
+한국전력국제원자력대학원대학교
+한국전통문화대학교
+한국조지메이슨대학교
+한국침례신학대학교
+한국폴리텍대학
+한국학중앙연구원 한국학대학원
+한국항공대학교
+한남대학교
+한동대학교
+한라대학교
+한림국제대학원대학교
+한림대학교
+한림성심대학교
+한반도국제대학원대학교
+한서대학교
+한성대학교
+한세대학교
+한세대학교
+한신대학교
+한양대학교
+한양대학교 ERICA캠퍼스
+한양사이버대학교
+한양여자대학교
+한영대학교
+한일장신대학교
+합동신학대학원대학교
+해군사관학교
+협성대학교
+혜전대학교
+호남대학교
+호남신학대학교
+호산대학교
+호서대학교
+호원대학교
+홍익대학교
+화성의과학대학교
+화신사이버대학교
+횃불트리니티신학대학원대학교
+    `
+      .split("\n")
+      .map((v) => v.trim())
+      .filter(Boolean),
+  ),
+);
 
 /** MBTI 문자열 → 슬라이더 기본값 (0~100, 50=중앙) */
 function mbtiStringToSliders(mbti?: string) {
@@ -157,14 +711,34 @@ const IcBell = () => (
     <path d="M12 22c1.1 0 2-.9 2-2h-4a2 2 0 002 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" />
   </svg>
 );
+const IcPhone = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill={color.gray500}>
+    <path d="M6.62 10.79a15.53 15.53 0 006.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1C10.3 21 3 13.7 3 4c0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.24.2 2.45.57 3.57.12.35.03.74-.24 1.02l-2.21 2.2z" />
+  </svg>
+);
+const IcChatBubble = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill={color.gray500}>
+    <path d="M4 4h16c1.1 0 2 .9 2 2v9c0 1.1-.9 2-2 2H8l-4 4V6c0-1.1.9-2 2-2zm3 5h10v2H7V9zm0 4h7v2H7v-2z" />
+  </svg>
+);
 const IcNoSmoke = () => (
   <svg width="28" height="28" viewBox="0 0 24 24" fill={color.gray500}>
     <path d="M2 6l6.99 7H2v3h9.99l7 7 1.26-1.25-17-17L2 6zm18.5 7H22v3h-1.5v-3zM18 13h1.5v3H18v-3zm.85-8.12c.62-.61 1-1.45 1-2.38h-1.5c0 1.02-.83 1.85-1.85 1.85v1.5c2.24 0 4 1.83 4 4.07V12H22V9.92c0-2.23-1.28-4.15-3.15-5.04zM14.5 8.7c.91-.47 1.5-1.41 1.5-2.5 0-1.65-1.35-3-3-3v1.5c.83 0 1.5.67 1.5 1.5 0 .84-.67 1.5-1.5 1.5v1.5c1.85 0 3.5 1.18 3.5 3V12H18v-.8c0-2.04-1.53-3.54-3.5-3.5z" />
   </svg>
 );
+const IcSmoke = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill={color.gray500}>
+    <path d="M3 13h14v4H3v-4zm15 0h3a2 2 0 012 2 2 2 0 01-2 2h-3v-4zM15.5 3c1.1.75 1.8 1.98 1.8 3.35 0 1.13-.49 2.15-1.27 2.85l-.98-.98c.5-.46.81-1.11.81-1.87 0-.88-.43-1.67-1.09-2.15L15.5 3zm3.5.5C20.22 4.52 21 6.19 21 8c0 1.5-.53 2.87-1.42 3.95l-1.01-1.01A4.47 4.47 0 0019.5 8c0-1.35-.6-2.56-1.56-3.38L19 3.5z" />
+  </svg>
+);
 const IcBeer = () => (
   <svg width="28" height="28" viewBox="0 0 24 24" fill={color.gray500}>
     <path d="M4 2h12v2H4v16h12v2H4c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2zm14 4h2c1.1 0 2 .9 2 2v6c0 1.1-.9 2-2 2h-2V6zm0 8h2V8h-2v6zM6 6h8v12H6V6zm2 2v8h4V8H8z" />
+  </svg>
+);
+const IcCup = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill={color.gray500}>
+    <path d="M3 4h14v3a4 4 0 01-4 4h-1v7h3v2H5v-2h3v-7H7a4 4 0 01-4-4V4zm2 2v1a2 2 0 002 2h6a2 2 0 002-2V6H5z" />
   </svg>
 );
 const IcCute = () => (
@@ -173,6 +747,14 @@ const IcCute = () => (
     <path d="M8 14s1.5 2 4 2 4-2 4-2" stroke={color.gray500} strokeWidth="1.5" strokeLinecap="round" fill="none" />
     <circle cx="9" cy="9.5" r="1.2" />
     <circle cx="15" cy="9.5" r="1.2" />
+  </svg>
+);
+const IcNeutral = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill={color.gray500}>
+    <circle cx="12" cy="12" r="10" fill="none" stroke={color.gray500} strokeWidth="1.5" />
+    <circle cx="9" cy="10" r="1.2" />
+    <circle cx="15" cy="10" r="1.2" />
+    <path d="M8 15h8" stroke={color.gray500} strokeWidth="1.5" strokeLinecap="round" />
   </svg>
 );
 const IcAngry = () => (
@@ -189,15 +771,6 @@ const IcQuestion = () => (
     <text x="12" y="17" textAnchor="middle" fontSize="18" fontWeight="700">?</text>
   </svg>
 );
-
-const PREF_ICONS: Record<string, React.FC> = {
-  contactPref: IcBell,
-  cigar: IcNoSmoke,
-  drinking: IcBeer,
-  affectionLevel: IcCute,
-  jealousyLevel: IcAngry,
-  meetingPref: IcQuestion,
-};
 
 /* ================================================================
    MbtiSlider 컴포넌트
@@ -416,6 +989,7 @@ const ANIMAL_OPTIONS: Array<{ label: string; value: string }> = [
   { label: "고슴도치", value: "Hedgehog" },
   { label: "고양이", value: "Cat" },
   { label: "곰돌이", value: "Brown Bear" },
+  { label: "늑대", value: "Wolf" },
   { label: "담비", value: "Marten" },
   { label: "범고래", value: "Orca" },
   { label: "수달", value: "Otter" },
@@ -464,9 +1038,44 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
   const [avatarError, setAvatarError] = useState("");
   const [aiInfoOpen, setAiInfoOpen] = useState(false);
   const [selectedAnimal, setSelectedAnimal] = useState<string>("AI Recommand");
+  const [bornYearPickerOpen, setBornYearPickerOpen] = useState(false);
+  const [heightPickerOpen, setHeightPickerOpen] = useState(false);
+  const [residencePickerOpen, setResidencePickerOpen] = useState(false);
+  const [residenceQuery, setResidenceQuery] = useState("");
+  const [jobPickerOpen, setJobPickerOpen] = useState(false);
+  const [jobQuery, setJobQuery] = useState("");
+  const [schoolPickerOpen, setSchoolPickerOpen] = useState(false);
+  const [schoolQuery, setSchoolQuery] = useState("");
   const [error, setError] = useState("");
   const initialized = useRef(false);
+  const nameFieldRef = useRef<HTMLDivElement | null>(null);
+  const bornFieldRef = useRef<HTMLDivElement | null>(null);
+  const heightFieldRef = useRef<HTMLDivElement | null>(null);
+  const residenceFieldRef = useRef<HTMLDivElement | null>(null);
+  const jobFieldRef = useRef<HTMLDivElement | null>(null);
+  const schoolFieldRef = useRef<HTMLDivElement | null>(null);
+  const departmentFieldRef = useRef<HTMLDivElement | null>(null);
+  const aboutmeFieldRef = useRef<HTMLDivElement | null>(null);
+  const featuresFieldRef = useRef<HTMLDivElement | null>(null);
+  const interestsFieldRef = useRef<HTMLDivElement | null>(null);
+  const idealTypeFieldRef = useRef<HTMLDivElement | null>(null);
+  const prefFieldRef = useRef<HTMLDivElement | null>(null);
   const genderLocked = typeof buffer.gender === "boolean";
+  const filteredResidences = useMemo(() => {
+    const q = residenceQuery.trim().toLowerCase();
+    if (!q) return RESIDENCE_OPTIONS;
+    return RESIDENCE_OPTIONS.filter((name) => name.toLowerCase().includes(q));
+  }, [residenceQuery]);
+  const filteredJobs = useMemo(() => {
+    const q = jobQuery.trim().toLowerCase();
+    if (!q) return JOB_OPTIONS;
+    return JOB_OPTIONS.filter((name) => name.toLowerCase().includes(q));
+  }, [jobQuery]);
+  const filteredSchools = useMemo(() => {
+    const q = schoolQuery.trim().toLowerCase();
+    if (!q) return SCHOOL_OPTIONS;
+    return SCHOOL_OPTIONS.filter((name) => name.toLowerCase().includes(q));
+  }, [schoolQuery]);
 
   /** 버퍼 필드 부분 업데이트 (로컬만, 서버 접근 없음) */
   const set = useCallback((patch: Record<string, any>) => {
@@ -591,24 +1200,161 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
   };
 
   /* ---- 2단계 헬퍼: 선호도 (UI 문자열 ↔ DB 숫자) ---- */
+  const hasPrefSelection = (prefKey: string): boolean => {
+    if (prefKey === "cigar") {
+      return typeof buffer.cigar === "string" && PREF_OPTIONS.cigar.includes(buffer.cigar);
+    }
+    const entry = NUM_PREF_MAP[prefKey];
+    if (!entry) return false;
+    const dbVal = buffer[entry.dbField];
+    return (
+      typeof dbVal === "number" &&
+      Number.isInteger(dbVal) &&
+      dbVal >= 0 &&
+      dbVal < entry.options.length
+    );
+  };
+
   const getPref = (prefKey: string): string => {
-    if (prefKey === "cigar") return buffer.cigar ?? "비흡연";
+    if (!hasPrefSelection(prefKey)) return PREF_PLACEHOLDER;
+    if (prefKey === "cigar") return buffer.cigar as string;
     const entry = NUM_PREF_MAP[prefKey];
     if (!entry) return "";
-    const dbVal = buffer[entry.dbField] ?? 0;
+    const dbVal = buffer[entry.dbField] as number;
     return entry.options[dbVal] ?? entry.options[0];
+  };
+
+  const getPrefIcon = (prefKey: string): React.FC => {
+    if (!hasPrefSelection(prefKey)) return IcQuestion;
+    const value = getPref(prefKey);
+
+    if (prefKey === "contactPref") {
+      if (value === "전화") return IcPhone;
+      if (value === "카카오톡") return IcChatBubble;
+      return IcBell;
+    }
+    if (prefKey === "cigar") {
+      return value === "비흡연" ? IcNoSmoke : IcSmoke;
+    }
+    if (prefKey === "drinking") {
+      return value === "거의 안먹음" ? IcCup : IcBeer;
+    }
+    if (prefKey === "affectionLevel") {
+      if (value === "높은") return IcCute;
+      if (value === "중간") return IcNeutral;
+      return IcQuestion;
+    }
+    if (prefKey === "jealousyLevel") {
+      if (value === "높은") return IcAngry;
+      if (value === "중간") return IcNeutral;
+      return IcCute;
+    }
+    if (prefKey === "meetingPref") {
+      if (value === "데이트") return IcHeart;
+      if (value === "소개팅") return IcSparkle;
+      return IcQuestion;
+    }
+    return IcQuestion;
+  };
+
+  type RequiredFieldKey =
+    | "name"
+    | "born"
+    | "height"
+    | "residence"
+    | "job"
+    | "school"
+    | "department"
+    | "aboutme"
+    | "features"
+    | "interests"
+    | "idealType"
+    | "preferences";
+
+  const focusRequiredField = (field: RequiredFieldKey) => {
+    const targetMap: Record<RequiredFieldKey, HTMLDivElement | null> = {
+      name: nameFieldRef.current,
+      born: bornFieldRef.current,
+      height: heightFieldRef.current,
+      residence: residenceFieldRef.current,
+      job: jobFieldRef.current,
+      school: schoolFieldRef.current,
+      department: departmentFieldRef.current,
+      aboutme: aboutmeFieldRef.current,
+      features: featuresFieldRef.current,
+      interests: interestsFieldRef.current,
+      idealType: idealTypeFieldRef.current,
+      preferences: prefFieldRef.current,
+    };
+    const target = targetMap[field];
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (field === "name") {
+      const input = target.querySelector("input");
+      if (input instanceof HTMLInputElement) {
+        window.setTimeout(() => input.focus(), 220);
+      }
+    }
+    if (field === "aboutme") {
+      const textarea = target.querySelector("textarea");
+      if (textarea instanceof HTMLTextAreaElement) {
+        window.setTimeout(() => textarea.focus(), 220);
+      }
+    }
+  };
+
+  const validateRequiredField = (): { field: RequiredFieldKey; label: string } | null => {
+    if (!(buffer.name ?? "").trim()) return { field: "name", label: "닉네임" };
+    if (!String(buffer.born ?? "").trim()) return { field: "born", label: "출생연도" };
+    if (buffer.height == null || String(buffer.height).trim() === "") {
+      return { field: "height", label: "키" };
+    }
+    if (!String(buffer.residence ?? "").trim()) return { field: "residence", label: "거주지" };
+    if (!String(buffer.job ?? "").trim()) return { field: "job", label: "직업" };
+    if (!String(buffer.school ?? "").trim()) return { field: "school", label: "대학교" };
+    if (!String(buffer.department ?? "").trim()) return { field: "department", label: "전공" };
+    if ((buffer.aboutme ?? "").trim().length < 10) return { field: "aboutme", label: "자기소개" };
+    if (!Array.isArray(buffer.features) || buffer.features.length === 0) {
+      return { field: "features", label: "내특징" };
+    }
+    if (!Array.isArray(buffer.interests) || buffer.interests.length === 0) {
+      return { field: "interests", label: "관심사" };
+    }
+    if (!Array.isArray(buffer.idealType) || buffer.idealType.length === 0) {
+      return { field: "idealType", label: "이상형" };
+    }
+    const prefKeys = [
+      "contactPref",
+      "cigar",
+      "drinking",
+      "affectionLevel",
+      "jealousyLevel",
+      "meetingPref",
+    ];
+    const hasAnyMissingPref = prefKeys.some((key) => !hasPrefSelection(key));
+    if (hasAnyMissingPref) return { field: "preferences", label: "선호도" };
+    return null;
   };
 
   const cyclePref = (prefKey: string) => {
     if (prefKey === "cigar") {
       const opts = PREF_OPTIONS.cigar;
-      const idx = opts.indexOf(buffer.cigar ?? "비흡연");
-      set({ cigar: opts[(idx + 1) % opts.length] });
+      if (!hasPrefSelection(prefKey)) {
+        set({ cigar: opts[0] });
+        return;
+      }
+      const idx = opts.indexOf(buffer.cigar as string);
+      const safeIdx = idx >= 0 ? idx : 0;
+      set({ cigar: opts[(safeIdx + 1) % opts.length] });
       return;
     }
     const entry = NUM_PREF_MAP[prefKey];
     if (!entry) return;
-    const current = (buffer[entry.dbField] as number) ?? 0;
+    if (!hasPrefSelection(prefKey)) {
+      set({ [entry.dbField]: 0 });
+      return;
+    }
+    const current = buffer[entry.dbField] as number;
     set({ [entry.dbField]: (current + 1) % entry.options.length });
   };
 
@@ -627,8 +1373,10 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
   /* ---- 즉시 저장 (저장 버튼 → 서버 반영 + 전역 프로필 갱신) ---- */
   const handleSave = async () => {
     if (isReadMode) return;
-    if (!(buffer.name ?? "").trim()) {
-      setError("이름을 입력해주세요.");
+    const missing = validateRequiredField();
+    if (missing) {
+      setError(`해당 필드를 입력하세요: ${missing.label}`);
+      focusRequiredField(missing.field);
       return;
     }
     if (!userId) return;
@@ -664,11 +1412,16 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
 
     try {
       const payloadAnimal = selectedAnimal === "AI Recommand" ? null : selectedAnimal;
+      const payloadMbti = typeof buffer.mbti === "string" ? buffer.mbti : null;
       console.info("[EditProfile][AI Avatar] generate request", {
         selectedAnimal,
         payloadAnimal,
+        mbti: payloadMbti,
       });
-      const result = await generateProfileAvatars({ animal: payloadAnimal });
+      const result = await generateProfileAvatars({
+        animal: payloadAnimal,
+        mbti: payloadMbti,
+      });
       console.info("[EditProfile][AI Avatar] generate response", {
         genId: result.genId,
         candidateCount: result.candidates.length,
@@ -793,7 +1546,7 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
                 <span style={{ fontSize: 30 }}>🌷</span>
               )}
             </div>
-            <div style={{ flex: 1 }}>
+            <div style={{ flex: 1 }} ref={nameFieldRef}>
               <span style={s.fieldHint}>닉네임</span>
               <input
                 type="text"
@@ -835,53 +1588,72 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
             </div>
           </div>
 
-          {/* 성별 */}
-          <div style={{ marginTop: 20 }}>
-            <p style={s.fieldLabel}>
-              성별{" "}
-              <span style={{ ...typo.caption, color: color.gray400, fontWeight: 400 }}>
-                성별은 가입 후 수정할 수 없습니다.
-              </span>
-            </p>
-            <div style={s.genderRow}>
-              {[true, false].map((g) => (
-                <button
-                  key={String(g)}
-                  onClick={() =>
-                    !isReadMode && !genderLocked && set({ gender: g })
-                  }
-                  disabled={isReadMode || genderLocked}
-                  style={{
-                    ...s.genderBtn,
-                    borderColor: buffer.gender === g ? color.mint500 : color.gray300,
-                    color: buffer.gender === g ? color.mint600 : color.gray400,
-                    background: buffer.gender === g ? color.mint50 : color.white,
-                    cursor: isReadMode || genderLocked ? "default" : "pointer",
-                    pointerEvents: isReadMode || genderLocked ? "none" : "auto",
-                  }}
-                >
-                  {g ? "남자" : "여자"}
-                </button>
-              ))}
-            </div>
-          </div>
 
           {/* 2열 정보 그리드 */}
           <div style={s.infoGrid}>
-            <InfoField icon={<IcCrown />} label="출생연도" value={buffer.born ?? ""} placeholder="예: 1998" suffix="년" onChange={(v) => set({ born: v })} inputMode="numeric" readOnly={isReadMode} />
-            <InfoField icon={<IcHeight />} label="키" value={buffer.height != null ? String(buffer.height) : ""} placeholder="예: 174" suffix="cm" onChange={(v) => set({ height: v })} inputMode="numeric" readOnly={isReadMode} />
+            <div ref={bornFieldRef}>
+              <HeightPickerField
+                icon={<IcCrown />}
+                label="출생연도"
+                value={buffer.born != null ? String(buffer.born) : ""}
+                placeholder="선택해주세요."
+                suffix="년"
+                onClick={() => setBornYearPickerOpen(true)}
+                readOnly={isReadMode}
+              />
+            </div>
+            <div ref={heightFieldRef}>
+              <HeightPickerField
+                icon={<IcHeight />}
+                label="키"
+                value={buffer.height != null ? String(buffer.height) : ""}
+                placeholder="선택해주세요."
+                suffix="cm"
+                onClick={() => setHeightPickerOpen(true)}
+                readOnly={isReadMode}
+              />
+            </div>
           </div>
           <div style={s.infoGrid}>
-            <InfoField icon={<IcPin />} label="거주지" value={buffer.residence ?? ""} placeholder="예: 서울 북부" onChange={(v) => set({ residence: v })} readOnly={isReadMode} />
-            <InfoField icon={<IcBriefcase />} label="직업" value={buffer.job ?? ""} placeholder="직업 입력" onChange={(v) => set({ job: v })} readOnly={isReadMode} />
+            <div ref={residenceFieldRef}>
+              <HeightPickerField
+                icon={<IcPin />}
+                label="거주지"
+                value={buffer.residence ?? ""}
+                placeholder="선택해주세요."
+                onClick={() => setResidencePickerOpen(true)}
+                readOnly={isReadMode}
+              />
+            </div>
+            <div ref={jobFieldRef}>
+              <HeightPickerField
+                icon={<IcBriefcase />}
+                label="직업"
+                value={buffer.job ?? ""}
+                placeholder="선택해주세요."
+                onClick={() => setJobPickerOpen(true)}
+                readOnly={isReadMode}
+              />
+            </div>
           </div>
           <div style={s.infoGrid}>
-            <InfoField icon={<IcSchool />} label="대학교" value={buffer.school ?? ""} placeholder="학교명" onChange={(v) => set({ school: v })} readOnly={isReadMode} />
-            <InfoField icon={<IcDoc />} label="전공" value={buffer.department ?? ""} placeholder="전공 입력" onChange={(v) => set({ department: v })} readOnly={isReadMode} />
+            <div ref={schoolFieldRef}>
+              <HeightPickerField
+                icon={<IcSchool />}
+                label="대학교"
+                value={buffer.school ?? ""}
+                placeholder="선택해주세요."
+                onClick={() => setSchoolPickerOpen(true)}
+                readOnly={isReadMode}
+              />
+            </div>
+            <div ref={departmentFieldRef}>
+              <InfoField icon={<IcDoc />} label="전공" value={buffer.department ?? ""} placeholder="직접 입력" onChange={(v) => set({ department: v })} readOnly={isReadMode} />
+            </div>
           </div>
 
           {/* 자기소개 */}
-          <div style={{ marginTop: 22 }}>
+          <div style={{ marginTop: 22 }} ref={aboutmeFieldRef}>
             <p style={s.fieldLabel}>자기소개</p>
             <p style={{ ...typo.caption, color: color.gray500, marginBottom: 8 }}>
               자세히 작성할수록 매칭률 UP!
@@ -911,52 +1683,61 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
 
         {/* ==================== 카드 3: 내특징 / 관심사 / 이상형 ==================== */}
         <div style={s.card}>
-          <TagRow
-            icon={<IcPerson />}
-            label="내특징"
-            sub={(buffer.features?.length ?? 0) > 0 ? `${buffer.features.length}개 선택됨` : "선택해주세요."}
-            onClick={isReadMode ? undefined : () =>
-              navigateToSelection(
-                `/select?mode=traits&title=${encodeURIComponent("내특징 선택")}&field=myTraits&returnTo=/me/edit&current=${encodeURIComponent(JSON.stringify(buffer.features ?? []))}`
-              )
-            }
-            disabled={isReadMode}
-          />
+          <div ref={featuresFieldRef}>
+            <TagRow
+              icon={<IcPerson />}
+              label="내특징"
+              sub={(buffer.features?.length ?? 0) > 0 ? '' : "선택해주세요."}
+              selected={buffer.features ?? []}
+              onClick={isReadMode ? undefined : () =>
+                navigateToSelection(
+                  `/select?mode=traits&title=${encodeURIComponent("내특징 선택")}&field=myTraits&returnTo=/me/edit&current=${encodeURIComponent(JSON.stringify(buffer.features ?? []))}`
+                )
+              }
+              disabled={isReadMode}
+            />
+          </div>
           <div style={s.divider} />
-          <TagRow
-            icon={<IcSparkle />}
-            label="관심사"
-            sub={(buffer.interests?.length ?? 0) > 0 ? `${buffer.interests.length}개 선택됨` : "선택해주세요."}
-            onClick={isReadMode ? undefined : () =>
-              navigateToSelection(
-                `/select?mode=interests&title=${encodeURIComponent("관심사 선택")}&field=interests&returnTo=/me/edit&current=${encodeURIComponent(JSON.stringify(buffer.interests ?? []))}`
-              )
-            }
-            disabled={isReadMode}
-          />
+          <div ref={interestsFieldRef}>
+            <TagRow
+              icon={<IcSparkle />}
+              label="관심사"
+              sub={(buffer.interests?.length ?? 0) > 0 ? '' : "선택해주세요."}
+              selected={buffer.interests ?? []}
+              onClick={isReadMode ? undefined : () =>
+                navigateToSelection(
+                  `/select?mode=interests&title=${encodeURIComponent("관심사 선택")}&field=interests&returnTo=/me/edit&current=${encodeURIComponent(JSON.stringify(buffer.interests ?? []))}`
+                )
+              }
+              disabled={isReadMode}
+            />
+          </div>
           <div style={s.divider} />
-          <TagRow
-            icon={<IcHeart />}
-            label="이상형"
-            sub={(buffer.idealType?.length ?? 0) > 0 ? `${buffer.idealType.length}개 선택됨` : "선택해주세요."}
-            onClick={isReadMode ? undefined : () =>
-              navigateToSelection(
-                `/select?mode=ideal&title=${encodeURIComponent("이상형 선택")}&field=idealTraits&returnTo=/me/edit&current=${encodeURIComponent(JSON.stringify(buffer.idealType ?? []))}`
-              )
-            }
-            disabled={isReadMode}
-          />
+          <div ref={idealTypeFieldRef}>
+            <TagRow
+              icon={<IcHeart />}
+              label="이상형"
+              sub={(buffer.idealType?.length ?? 0) > 0 ? `` : "선택해주세요."}
+              selected={buffer.idealType ?? []}
+              onClick={isReadMode ? undefined : () =>
+                navigateToSelection(
+                  `/select?mode=ideal&title=${encodeURIComponent("이상형 선택")}&field=idealTraits&returnTo=/me/edit&current=${encodeURIComponent(JSON.stringify(buffer.idealType ?? []))}`
+                )
+              }
+              disabled={isReadMode}
+            />
+          </div>
         </div>
 
         {/* ==================== 카드 4: 선호도 ==================== */}
-        <div style={s.card}>
+        <div style={s.card} ref={prefFieldRef}>
           <div style={s.prefGrid}>
             {["contactPref", "cigar", "drinking"].map((key) => (
               <PrefCard
                 key={key}
                 label={PREF_LABELS[key]}
                 value={getPref(key)}
-                Icon={PREF_ICONS[key]}
+                Icon={getPrefIcon(key)}
                 onClick={() => cyclePref(key)}
                 disabled={isReadMode}
               />
@@ -968,7 +1749,7 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
                 key={key}
                 label={PREF_LABELS[key]}
                 value={getPref(key)}
-                Icon={PREF_ICONS[key]}
+                Icon={getPrefIcon(key)}
                 onClick={() => cyclePref(key)}
                 disabled={isReadMode}
               />
@@ -986,6 +1767,246 @@ export const EditProfilePage: React.FC<EditProfilePageProps> = ({ mode = "edit" 
             {saving ? "저장 중…" : "저장하기"}
           </Button>
         </div>
+      )}
+
+      {!isReadMode && (
+        <Modal
+          open={residencePickerOpen}
+          title="거주지 선택"
+          cancelText="닫기"
+          confirmText="확인"
+          onCancel={() => {
+            setResidencePickerOpen(false);
+            setResidenceQuery("");
+          }}
+          onConfirm={() => {
+            setResidencePickerOpen(false);
+            setResidenceQuery("");
+          }}
+        >
+          <div style={s.schoolPickerWrap}>
+            <input
+              type="text"
+              value={residenceQuery}
+              onChange={(e) => setResidenceQuery(e.target.value)}
+              placeholder="거주지 검색"
+              style={s.schoolSearchInput}
+            />
+            <div style={s.heightPickerList}>
+              {filteredResidences.length === 0 ? (
+                <div style={s.schoolEmptyText}>검색 결과가 없습니다.</div>
+              ) : (
+                filteredResidences.map((residence) => {
+                  const selected = String(buffer.residence ?? "") === residence;
+                  return (
+                    <button
+                      key={residence}
+                      type="button"
+                      style={{
+                        ...s.heightPickerItem,
+                        background: selected ? color.mint50 : color.white,
+                        color: selected ? color.mint700 : color.gray800,
+                        borderColor: selected ? color.mint200 : color.gray200,
+                        fontWeight: selected ? 700 : 500,
+                      }}
+                      onClick={() => {
+                        set({ residence });
+                        setResidencePickerOpen(false);
+                        setResidenceQuery("");
+                      }}
+                    >
+                      {residence}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {!isReadMode && (
+        <Modal
+          open={jobPickerOpen}
+          title="직업 선택"
+          cancelText="닫기"
+          confirmText="확인"
+          onCancel={() => {
+            setJobPickerOpen(false);
+            setJobQuery("");
+          }}
+          onConfirm={() => {
+            setJobPickerOpen(false);
+            setJobQuery("");
+          }}
+        >
+          <div style={s.schoolPickerWrap}>
+            <input
+              type="text"
+              value={jobQuery}
+              onChange={(e) => setJobQuery(e.target.value)}
+              placeholder="직업 검색"
+              style={s.schoolSearchInput}
+            />
+            <div style={s.heightPickerList}>
+              {filteredJobs.length === 0 ? (
+                <div style={s.schoolEmptyText}>검색 결과가 없습니다.</div>
+              ) : (
+                filteredJobs.map((job) => {
+                  const selected = String(buffer.job ?? "") === job;
+                  return (
+                    <button
+                      key={job}
+                      type="button"
+                      style={{
+                        ...s.heightPickerItem,
+                        background: selected ? color.mint50 : color.white,
+                        color: selected ? color.mint700 : color.gray800,
+                        borderColor: selected ? color.mint200 : color.gray200,
+                        fontWeight: selected ? 700 : 500,
+                      }}
+                      onClick={() => {
+                        set({ job });
+                        setJobPickerOpen(false);
+                        setJobQuery("");
+                      }}
+                    >
+                      {job}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {!isReadMode && (
+        <Modal
+          open={schoolPickerOpen}
+          title="대학교 선택"
+          cancelText="닫기"
+          confirmText="확인"
+          onCancel={() => {
+            setSchoolPickerOpen(false);
+            setSchoolQuery("");
+          }}
+          onConfirm={() => {
+            setSchoolPickerOpen(false);
+            setSchoolQuery("");
+          }}
+        >
+          <div style={s.schoolPickerWrap}>
+            <input
+              type="text"
+              value={schoolQuery}
+              onChange={(e) => setSchoolQuery(e.target.value)}
+              placeholder="학교명 검색"
+              style={s.schoolSearchInput}
+            />
+            <div style={s.heightPickerList}>
+              {filteredSchools.length === 0 ? (
+                <div style={s.schoolEmptyText}>검색 결과가 없습니다.</div>
+              ) : (
+                filteredSchools.map((school) => {
+                  const selected = String(buffer.school ?? "") === school;
+                  return (
+                    <button
+                      key={school}
+                      type="button"
+                      style={{
+                        ...s.heightPickerItem,
+                        background: selected ? color.mint50 : color.white,
+                        color: selected ? color.mint700 : color.gray800,
+                        borderColor: selected ? color.mint200 : color.gray200,
+                        fontWeight: selected ? 700 : 500,
+                      }}
+                      onClick={() => {
+                        set({ school });
+                        setSchoolPickerOpen(false);
+                        setSchoolQuery("");
+                      }}
+                    >
+                      {school}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {!isReadMode && (
+        <Modal
+          open={bornYearPickerOpen}
+          title="출생연도 선택"
+          cancelText="닫기"
+          confirmText="확인"
+          onCancel={() => setBornYearPickerOpen(false)}
+          onConfirm={() => setBornYearPickerOpen(false)}
+        >
+          <div style={s.heightPickerList}>
+            {BORN_YEAR_OPTIONS.map((year) => {
+              const selected = String(buffer.born ?? "") === String(year);
+              return (
+                <button
+                  key={year}
+                  type="button"
+                  style={{
+                    ...s.heightPickerItem,
+                    background: selected ? color.mint50 : color.white,
+                    color: selected ? color.mint700 : color.gray800,
+                    borderColor: selected ? color.mint200 : color.gray200,
+                    fontWeight: selected ? 700 : 500,
+                  }}
+                  onClick={() => {
+                    set({ born: String(year) });
+                    setBornYearPickerOpen(false);
+                  }}
+                >
+                  {year}
+                </button>
+              );
+            })}
+          </div>
+        </Modal>
+      )}
+
+      {!isReadMode && (
+        <Modal
+          open={heightPickerOpen}
+          title="키 선택"
+          cancelText="닫기"
+          confirmText="확인"
+          onCancel={() => setHeightPickerOpen(false)}
+          onConfirm={() => setHeightPickerOpen(false)}
+        >
+          <div style={s.heightPickerList}>
+            {HEIGHT_OPTIONS.map((option) => {
+              const selected = String(buffer.height ?? "") === String(option.value);
+              return (
+                <button
+                  key={option.label}
+                  type="button"
+                  style={{
+                    ...s.heightPickerItem,
+                    background: selected ? color.mint50 : color.white,
+                    color: selected ? color.mint700 : color.gray800,
+                    borderColor: selected ? color.mint200 : color.gray200,
+                    fontWeight: selected ? 700 : 500,
+                  }}
+                  onClick={() => {
+                    set({ height: option.value });
+                    setHeightPickerOpen(false);
+                  }}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </Modal>
       )}
 
       {!isReadMode && (
@@ -1091,6 +2112,38 @@ const InfoField: React.FC<{
   </div>
 );
 
+const HeightPickerField: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  placeholder: string;
+  suffix?: string;
+  onClick: () => void;
+  readOnly?: boolean;
+}> = ({ icon, label, value, placeholder, suffix, onClick, readOnly = false }) => (
+  <div style={{ minWidth: 0 }}>
+    <p style={s.fieldLabel}>{label}</p>
+    <button
+      type="button"
+      style={{
+        ...s.infoCard,
+        width: "100%",
+        cursor: readOnly ? "default" : "pointer",
+        textAlign: "left",
+        opacity: readOnly ? 0.9 : 1,
+      }}
+      onClick={readOnly ? undefined : onClick}
+      disabled={readOnly}
+    >
+      <span style={{ flexShrink: 0, display: "flex" }}>{icon}</span>
+      <span style={{ ...s.infoInput, color: value ? color.gray900 : color.gray400 }}>
+        {value || placeholder}
+      </span>
+      {suffix && value && <span style={s.suffix}>{suffix}</span>}
+    </button>
+  </div>
+);
+
 /* ================================================================
    TagRow — 내특징 / 관심사 / 이상형
    ================================================================ */
@@ -1099,18 +2152,32 @@ const TagRow: React.FC<{
   icon: React.ReactNode;
   label: string;
   sub: string;
+  selected?: string[];
   onClick?: () => void;
   disabled?: boolean;
-}> = ({ icon, label, sub, onClick, disabled = false }) => (
+}> = ({ icon, label, sub, selected = [], onClick, disabled = false }) => (
   <div
     style={{ ...s.tagRow, cursor: disabled ? "default" : "pointer" }}
     onClick={disabled ? undefined : onClick}
   >
-    <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, flex: 1, minWidth: 0 }}>
       {icon}
-      <div>
+      <div style={{ minWidth: 0 }}>
         <p style={{ ...typo.subheading, color: color.gray900, fontSize: 14 }}>{label}</p>
         <p style={{ ...typo.caption, color: color.gray400 }}>{sub}</p>
+        {selected.length > 0 && (
+          <div style={s.tagPreviewWrap}>
+            {chunkByThree(selected).map((row, rowIdx) => (
+              <div key={`row-${rowIdx}`} style={s.tagPreviewRow}>
+                {row.map((item) => (
+                  <span key={`${item}-${rowIdx}`} style={s.tagPreviewChip}>
+                    {item}
+                  </span>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
     {!disabled && <IcChevron />}
@@ -1326,6 +2393,46 @@ const s: Record<string, React.CSSProperties> = {
     ...typo.caption,
     color: color.danger,
   },
+  heightPickerList: {
+    maxHeight: 220,
+    overflowY: "auto",
+    border: `1px solid ${color.gray200}`,
+    borderRadius: radius.lg,
+    padding: 6,
+    display: "flex",
+    flexDirection: "column",
+    gap: 6,
+  },
+  heightPickerItem: {
+    minHeight: 44,
+    borderRadius: radius.md,
+    border: `1px solid ${color.gray200}`,
+    ...typo.body,
+    cursor: "pointer",
+    width: "100%",
+  },
+  schoolPickerWrap: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
+  },
+  schoolSearchInput: {
+    width: "100%",
+    height: 40,
+    borderRadius: radius.md,
+    border: `1px solid ${color.gray300}`,
+    padding: "0 12px",
+    ...typo.body,
+    color: color.gray900,
+    background: color.white,
+    outline: "none",
+    boxSizing: "border-box",
+  },
+  schoolEmptyText: {
+    ...typo.caption,
+    color: color.gray500,
+    padding: "16px 8px",
+  },
 
   /* -- 성별 -- */
   genderRow: {
@@ -1426,6 +2533,29 @@ const s: Record<string, React.CSSProperties> = {
     height: 1,
     background: color.gray100,
   },
+  tagPreviewWrap: {
+    marginTop: 8,
+    display: "flex",
+    flexDirection: "column",
+    gap: 6,
+  },
+  tagPreviewRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+  },
+  tagPreviewChip: {
+    ...typo.caption,
+    color: color.mint700,
+    background: color.mint50,
+    border: `1px solid ${color.mint100}`,
+    borderRadius: radius.full,
+    padding: "4px 8px",
+    lineHeight: "16px",
+    whiteSpace: "normal",
+    wordBreak: "keep-all",
+    overflowWrap: "break-word",
+  },
 
   /* -- 선호도 그리드 -- */
   prefGrid: {
@@ -1471,3 +2601,11 @@ const s: Record<string, React.CSSProperties> = {
     background: color.gray100,
   },
 };
+
+function chunkByThree(values: string[]): string[][] {
+  const rows: string[][] = [];
+  for (let i = 0; i < values.length; i += 3) {
+    rows.push(values.slice(i, i + 3));
+  }
+  return rows;
+}

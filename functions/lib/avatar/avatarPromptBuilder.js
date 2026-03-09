@@ -3,88 +3,130 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildAvatarPrompt = buildAvatarPrompt;
 exports.buildAvatarPromptWithMeta = buildAvatarPromptWithMeta;
 const FACE_PRESETS = {
-    friendly_confident: [
-        "Moderately large expressive eyes,",
-        "small nose,",
-        "soft rounded cheeks,",
-        "friendly confident smile.",
-        "Cute but not childish.",
-    ].join("\n"),
-    cute_shy: [
-        "Soft wide eyes with a gentle sparkle,",
-        "small rounded nose,",
-        "blushing rounded cheeks,",
-        "slight shy smile.",
-        "Cute but not childish.",
-    ].join("\n"),
-    calm_gentle: [
-        "Relaxed almond-shaped eyes,",
-        "small neat nose,",
-        "smooth rounded cheeks,",
-        "calm gentle smile.",
-        "Cute but not childish.",
-    ].join("\n"),
-    bright_energetic: [
+    lively_bright: [
         "Bright lively eyes,",
         "small button nose,",
         "slightly lifted cheeks,",
         "cheerful energetic smile.",
         "Cute but not childish.",
     ].join("\n"),
-    cool_chic: [
-        "Clear focused eyes,",
-        "small sharp nose,",
-        "clean rounded cheeks,",
-        "subtle cool chic smile.",
+    calm_soft: [
+        "Relaxed almond-shaped eyes,",
+        "small neat nose,",
+        "smooth rounded cheeks,",
+        "calm gentle smile.",
         "Cute but not childish.",
     ].join("\n"),
-    playful_mischievous: [
+    shy_gentle: [
+        "Soft wide eyes with a gentle sparkle,",
+        "small rounded nose,",
+        "blushing rounded cheeks,",
+        "slight shy smile.",
+        "Cute but not childish.",
+    ].join("\n"),
+    playful_fun: [
         "Curious sparkling eyes,",
         "small playful nose,",
         "plump rounded cheeks,",
         "playful mischievous grin.",
         "Cute but not childish.",
     ].join("\n"),
-    nerdy_focus: [
+    smart_composed: [
         "Attentive concentrated eyes,",
         "small tidy nose,",
         "gentle rounded cheeks,",
         "focused warm smile.",
         "Cute but not childish.",
     ].join("\n"),
-    elegant_warm: [
+    warm_kind: [
         "Graceful soft eyes,",
         "small refined nose,",
         "smooth rounded cheeks,",
         "elegant warm smile.",
         "Cute but not childish.",
     ].join("\n"),
+    cool_stylish: [
+        "Clear focused eyes,",
+        "small sharp nose,",
+        "clean rounded cheeks,",
+        "subtle cool chic smile.",
+        "Cute but not childish.",
+    ].join("\n"),
+    confident_direct: [
+        "Moderately large expressive eyes,",
+        "small nose,",
+        "soft rounded cheeks,",
+        "friendly confident smile.",
+        "Cute but not childish.",
+    ].join("\n"),
+};
+const GENDER_STYLE_PRESETS = {
+    masculine_soft: [
+        "Slightly broader upper-body silhouette,",
+        "clean and softly defined face details,",
+        "relaxed confident overall impression.",
+    ].join("\n"),
+    feminine_soft: [
+        "Slightly slimmer soft silhouette,",
+        "gentle and delicately softened face details,",
+        "soft elegant overall impression.",
+    ].join("\n"),
+    neutral_balanced: [
+        "Balanced neutral silhouette,",
+        "soft clean face details,",
+        "calm balanced overall impression.",
+    ].join("\n"),
 };
 const ACTION_PRESETS = {
+    gym_workout: "holding a dumbbell naturally",
+    running: "running lightly",
+    hiking: "hiking with a small backpack",
+    swimming: "wearing simple swim gear in a clean swimming pose",
+    yoga_pilates: "doing a gentle stretching pose on a yoga mat",
+    ball_sports: "playing a ball sport naturally",
+    climbing: "posing as if climbing an indoor wall",
+    cycling: "standing in a relaxed cycling pose",
+    surfing: "holding a small surfboard in a relaxed pose",
+    winter_sports: "wearing simple winter sports gear in a relaxed pose",
+    online_gaming: "playing a video game",
+    board_game: "playing a board game with a small game piece",
+    watching_sports: "cheering while watching a sports game",
+    watching_esports: "watching an esports match with focused excitement",
+    watching_movie_drama: "watching a movie",
+    reading: "reading a book calmly",
+    music_appreciation: "listening to music with headphones",
+    exhibition_visit: "looking at an artwork in a gallery-like pose",
+    fan_activity: "holding a small fan item in a cheerful pose",
+    photo_taking: "taking a photo with a small camera",
+    content_creating: "creating content with a small camera setup",
+    playing_instrument: "playing a musical instrument naturally",
+    writing: "writing in a notebook calmly",
+    reading_webtoon: "reading on a tablet casually",
+    self_improvement: "studying with a notebook in a focused pose",
+    investing: "looking at a tablet thoughtfully",
+    volunteering: "holding a small donation box in a kind pose",
+    traveling: "traveling with a tiny backpack",
+    driving: "enjoying a relaxed road-trip mood",
+    walking: "walking leisurely",
+    foodie_tour: "holding a small snack happily",
+    cafe_hopping: "drinking coffee in a cozy pose",
+    with_pet: "gently sitting with a small pet companion",
+    interior_styling: "arranging a small home object carefully",
+    fashion_styling: "posing as if showing a styled outfit confidently",
+    shopping: "holding a small shopping bag casually",
+    cooking_baking: "cooking something simple",
+    wine_whisky: "holding a simple glass elegantly",
+    traditional_liquor: "holding a traditional-style drink cup calmly",
     default_action: "standing still",
-    playing_video_game: "playing a video game",
-    playing_tennis: "playing tennis",
-    listening_music: "listening to music with headphones",
-    reading_book: "reading a book calmly",
-    drinking_coffee: "drinking coffee in a cozy pose",
-    taking_photo: "taking a photo with a small camera",
-    drawing_sketch: "drawing on a sketchbook",
-    jogging_lightly: "jogging lightly",
-    weight_training: "hodling a dumbbell",
-    cooking_simple: "cooking something simple",
-    traveling_backpack: "traveling with a tiny backpack",
 };
 const OUTFIT_PRESETS = {
-    sporty_hoodie: "Simple sporty hoodie, no complex patterns.",
-    varsity_jacket: "Minimal varsity jacket, simple logo-free.",
-    knit_sweater: "Clean knit sweater, solid color.",
-    windbreaker: "Light windbreaker, sporty minimal.",
-    tshirt_cardigan: "Simple t-shirt + cardigan, no patterns.",
-    zipup_jacket: "Minimal zip-up jacket, neutral tone.",
-    sweatshirt_oversized: "Basic sweatshirt, oversized but neat.",
-    polo_shirt: "Simple polo shirt, clean fit.",
-    denim_jacket: "Casual denim jacket, no patches.",
-    leggings_hoodie: "Sporty leggings with hoodie, no patterns.",
+    clean_breezy: "Clean light outfit with a fresh sporty mood, minimal and neat.",
+    modern_city: "Modern city-style outfit, sleek and polished, no complex patterns.",
+    neat_minimal: "Simple neat outfit with a minimal clean fit.",
+    pure_soft: "Soft clean outfit with a gentle and pure mood, simple and tidy.",
+    hip_street: "Trendy street-style outfit, youthful and stylish, no loud graphics.",
+    emotional_layered: "Soft layered outfit with an artistic and cozy mood.",
+    casual_comfy: "Casual comfortable outfit, simple and friendly, no complex patterns.",
 };
 const TEMPLATE = `Create a single square 1:1 profile avatar.
 
@@ -94,6 +136,7 @@ More like a character illustration than a real animal.
 
 Subject:
 {ANIMAL_LINE}
+{GENDER_STYLE_BLOCK}
 total body view, 1:1 ratio torso and head, centered but with breathing room.
 Body proportions cartoonish (rounded shapes, simplified limbs).
 
@@ -118,50 +161,105 @@ deformed, extra limbs, blurry.
 
 No text, no watermark, no logo.`;
 const ACTION_RULES = [
-    { keywords: ["게임", "video game", "콘솔", "pc"], preset: "playing_video_game" },
-    { keywords: ["테니스", "tennis"], preset: "playing_tennis" },
-    { keywords: ["음악", "music", "기타", "피아노", "밴드"], preset: "listening_music" },
-    { keywords: ["독서", "책", "reading"], preset: "reading_book" },
-    { keywords: ["카페", "커피"], preset: "drinking_coffee" },
-    { keywords: ["사진", "camera"], preset: "taking_photo" },
-    { keywords: ["그림", "드로잉", "drawing"], preset: "drawing_sketch" },
-    { keywords: ["러닝", "조깅", "running"], preset: "jogging_lightly" },
-    { keywords: ["헬스", "헬스장"], preset: "weight_training" },
-    { keywords: ["요리", "cooking"], preset: "cooking_simple" },
-    { keywords: ["여행", "travel"], preset: "traveling_backpack" },
+    { keywords: ["헬스"], preset: "gym_workout" },
+    { keywords: ["러닝"], preset: "running" },
+    { keywords: ["등산"], preset: "hiking" },
+    { keywords: ["수영"], preset: "swimming" },
+    { keywords: ["요가/필라테스"], preset: "yoga_pilates" },
+    { keywords: ["구기 종목"], preset: "ball_sports" },
+    { keywords: ["클라이밍"], preset: "climbing" },
+    { keywords: ["자전거"], preset: "cycling" },
+    { keywords: ["서핑"], preset: "surfing" },
+    { keywords: ["스키,스노보드"], preset: "winter_sports" },
+    { keywords: ["온라인 게임"], preset: "online_gaming" },
+    { keywords: ["보드게임"], preset: "board_game" },
+    { keywords: ["스포츠 관람"], preset: "watching_sports" },
+    { keywords: ["e스포츠 관람"], preset: "watching_esports" },
+    { keywords: ["영화 및 드라마 시청"], preset: "watching_movie_drama" },
+    { keywords: ["독서"], preset: "reading" },
+    { keywords: ["음악 감상"], preset: "music_appreciation" },
+    { keywords: ["공연 및 전시회 관람"], preset: "exhibition_visit" },
+    { keywords: ["팬활동"], preset: "fan_activity" },
+    { keywords: ["사진 촬영"], preset: "photo_taking" },
+    { keywords: ["콘텐츠 제작"], preset: "content_creating" },
+    { keywords: ["악기 연주"], preset: "playing_instrument" },
+    { keywords: ["글쓰기"], preset: "writing" },
+    { keywords: ["웹툰"], preset: "reading_webtoon" },
+    { keywords: ["자기계발"], preset: "self_improvement" },
+    { keywords: ["투자"], preset: "investing" },
+    { keywords: ["봉사활동"], preset: "volunteering" },
+    { keywords: ["여행"], preset: "traveling" },
+    //{ keywords: ["드라이브"], preset: "driving" },
+    { keywords: ["산책"], preset: "walking" },
+    { keywords: ["맛집 탐방"], preset: "foodie_tour" },
+    { keywords: ["카페 탐방"], preset: "cafe_hopping" },
+    { keywords: ["반려동물"], preset: "with_pet" },
+    { keywords: ["인테리어"], preset: "interior_styling" },
+    { keywords: ["패션"], preset: "fashion_styling" },
+    { keywords: ["쇼핑"], preset: "shopping" },
+    { keywords: ["요리/베이킹"], preset: "cooking_baking" },
+    { keywords: ["와인/위스키"], preset: "wine_whisky" },
+    { keywords: ["전통주"], preset: "traditional_liquor" },
 ];
 const FACE_RULES = [
-    { keywords: ["자신감", "당당", "리더"], preset: "friendly_confident" },
-    { keywords: ["수줍", "내향", "부끄"], preset: "cute_shy" },
-    { keywords: ["차분", "조용", "따뜻"], preset: "calm_gentle" },
-    { keywords: ["활발", "에너지", "외향"], preset: "bright_energetic" },
-    { keywords: ["쿨", "시크", "도도"], preset: "cool_chic" },
-    { keywords: ["장난", "유쾌", "개구"], preset: "playful_mischievous" },
-    { keywords: ["공부", "덕후", "집중", "nerd"], preset: "nerdy_focus" },
-    { keywords: ["우아", "성숙", "배려"], preset: "elegant_warm" },
+    { keywords: ["활발한", "외향적인", "밝은 성격", "긍정적인"], preset: "lively_bright" },
+    { keywords: ["차분한", "안정적인", "조용한 성격", "여유로운"], preset: "calm_soft" },
+    { keywords: ["내향적인", "감성적인"], preset: "shy_gentle" },
+    { keywords: ["유머있는", "즉흥적인"], preset: "playful_fun" },
+    { keywords: ["이성적인", "현실적인", "지적인", "계획적인"], preset: "smart_composed" },
+    { keywords: ["다정한"], preset: "warm_kind" },
+    { keywords: ["센스있는", "성숙한"], preset: "cool_stylish" },
+    { keywords: ["도전적인", "솔직한"], preset: "confident_direct" },
 ];
+const OUTFIT_RULES = [
+    { keywords: ["청량한"], preset: "clean_breezy" },
+    { keywords: ["세련된", "도시적인"], preset: "modern_city" },
+    { keywords: ["단정한"], preset: "neat_minimal" },
+    { keywords: ["청순한"], preset: "pure_soft" },
+    { keywords: ["힙한"], preset: "hip_street" },
+    { keywords: ["감성적인"], preset: "emotional_layered" },
+    { keywords: ["캐주얼한"], preset: "casual_comfy" },
+];
+const MBTI_ANIMAL_MAP = {
+    INFP: "rabbit",
+    INFJ: "deer",
+    INTP: "marten",
+    INTJ: "fennec fox",
+    ISFP: "hamster",
+    ISFJ: "otter",
+    ISTP: "cat",
+    ISTJ: "brown bear",
+    ENFP: "bichon dog",
+    ENFJ: "retriever dog",
+    ENTP: "fox",
+    ENTJ: "tiger",
+    ESFP: "orca",
+    ESFJ: "sheep",
+    ESTP: "wolf",
+    ESTJ: "doberman dog",
+};
 function buildAvatarPrompt(input) {
     return buildAvatarPromptWithMeta(input).prompt;
 }
 function buildAvatarPromptWithMeta(input) {
-    const animal = sanitizeAnimal(input.animal);
+    const normalizedMbti = normalizeMbti(input.mbti);
+    const animal = chooseAnimal({
+        rawAnimal: input.animal,
+        mbti: normalizedMbti,
+    });
     const interests = normalizeKeywords(input.interests);
     const traits = normalizeKeywords(input.traits);
-    const animalLine = `Adorable anthropomorphic ${animal} character.`;
+    const hasGlasses = hasKeywordMatch(traits, ["안경"]);
     const faceKey = chooseFacePreset(traits);
     const actionKey = chooseActionPreset(interests);
-    const outfitKey = chooseOutfitPreset({
-        gender: input.gender ?? "other",
-        traits,
-    });
-<<<<<<< HEAD
+    const outfitKey = chooseOutfitPreset(traits);
+    const genderStyleKey = chooseGenderStylePreset(input.gender);
+    const animalLine = `Adorable anthropomorphic ${animal} character.`;
+    const faceBlock = withGlasses(FACE_PRESETS[faceKey], hasGlasses);
+    const genderStyleBlock = GENDER_STYLE_PRESETS[genderStyleKey];
     const prompt = TEMPLATE.replace("{ANIMAL_LINE}", animalLine)
-        .replace("{FACE_BLOCK}", FACE_PRESETS[faceKey])
-=======
-    const faceBlock = withOptionalGlasses(FACE_PRESETS[faceKey], traits);
-    return TEMPLATE.replace("{ANIMAL_LINE}", animalLine)
+        .replace("{GENDER_STYLE_BLOCK}", genderStyleBlock)
         .replace("{FACE_BLOCK}", faceBlock)
->>>>>>> 27fe3fd (AIProfile)
         .replace("{ACTION_BLOCK}", ACTION_PRESETS[actionKey])
         .replace("{OUTFIT_BLOCK}", OUTFIT_PRESETS[outfitKey]);
     return {
@@ -170,11 +268,20 @@ function buildAvatarPromptWithMeta(input) {
             animal,
             normalizedInterests: interests,
             normalizedTraits: traits,
+            normalizedMbti,
             actionPreset: actionKey,
             facePreset: faceKey,
             outfitPreset: outfitKey,
+            genderStylePreset: genderStyleKey,
+            hasGlasses,
         },
     };
+}
+function chooseAnimal(input) {
+    const sanitized = sanitizeAnimal(input.rawAnimal);
+    if (sanitized)
+        return sanitized;
+    return MBTI_ANIMAL_MAP[input.mbti] ?? "hamster";
 }
 function chooseActionPreset(interests) {
     for (const rule of ACTION_RULES) {
@@ -188,39 +295,38 @@ function chooseFacePreset(traits) {
         if (hasKeywordMatch(traits, rule.keywords))
             return rule.preset;
     }
-    return "friendly_confident";
+    return "confident_direct";
 }
-function chooseOutfitPreset(input) {
-    const sporty = hasKeywordMatch(input.traits, ["운동", "스포츠", "활동"]);
-    const neat = hasKeywordMatch(input.traits, ["깔끔", "미니멀", "단정"]);
-    if (sporty) {
-        if (input.gender === "female")
-            return "leggings_hoodie";
-        if (input.gender === "male")
-            return "windbreaker";
-        return "windbreaker";
+function chooseOutfitPreset(traits) {
+    for (const rule of OUTFIT_RULES) {
+        if (hasKeywordMatch(traits, rule.keywords))
+            return rule.preset;
     }
-    if (neat) {
-        return input.gender === "male" ? "sweatshirt_oversized" : "knit_sweater";
-    }
-    return "sporty_hoodie";
+    return "casual_comfy";
 }
-function withOptionalGlasses(faceBlock, traits) {
-    const hasGlasses = hasKeywordMatch(traits, [
-        "안경",
-        "안경쓴",
-        "안경 씀",
-        "glasses",
-        "spectacles",
-    ]);
+function chooseGenderStylePreset(gender) {
+    if (gender === "male")
+        return "masculine_soft";
+    if (gender === "female")
+        return "feminine_soft";
+    return "neutral_balanced";
+}
+function withGlasses(faceBlock, hasGlasses) {
     if (!hasGlasses)
         return faceBlock;
-    return `${faceBlock}\nWearing thin round glasses, minimal design.`;
+    return [faceBlock, "Wearing simple round glasses."].join("\n");
+}
+function normalizeMbti(value) {
+    if (typeof value !== "string")
+        return "";
+    return value.trim().toUpperCase();
 }
 function sanitizeAnimal(value) {
     const raw = typeof value === "string" ? value.trim().toLowerCase() : "";
+    if (!raw)
+        return "";
     const safe = raw.replace(/[^a-z0-9 _-]/g, "").trim();
-    return safe || "hamster";
+    return safe;
 }
 function normalizeKeywords(values) {
     if (!Array.isArray(values))
@@ -233,37 +339,4 @@ function normalizeKeywords(values) {
 function hasKeywordMatch(values, keywords) {
     return values.some((value) => keywords.some((kw) => value.includes(kw.toLowerCase())));
 }
-/*
-샘플 1) 서울대/남/햄스터/게임/자신감
-buildAvatarPrompt({
-  gender: "male",
-  animal: "hamster",
-  interests: ["게임"],
-  traits: ["자신감"],
-});
-
-샘플 2) 여/토끼/테니스/차분
-buildAvatarPrompt({
-  gender: "female",
-  animal: "bunny",
-  interests: ["테니스"],
-  traits: ["차분함"],
-});
-
-샘플 3) 성별없음/고양이/음악+사진/쿨
-buildAvatarPrompt({
-  gender: "other",
-  animal: "cat",
-  interests: ["음악", "사진"],
-  traits: ["쿨"],
-});
-
-샘플 4) 안경 키워드 포함
-buildAvatarPrompt({
-  gender: "other",
-  animal: "hamster",
-  interests: ["게임"],
-  traits: ["안경", "차분함"],
-});
-*/
 //# sourceMappingURL=avatarPromptBuilder.js.map

@@ -149,7 +149,9 @@ export const SignupPage: React.FC = () => {
         phoneNumber: currentUser.phoneNumber,
         gender,
         authProvider: "phone",
-        isProfileVisible: false,
+        reminderEnabled: true,
+        ad: true,
+        isProfileVisible: true,
       });
       navigate("/");
     } catch (err: any) {

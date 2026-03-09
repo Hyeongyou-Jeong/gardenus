@@ -20,10 +20,6 @@ import {
 /* ---- Storage URL 캐시 (모듈 스코프, 동일 id 재요청 방지) ---- */
 const imgCache = new Map<string, string>();
 
-/* ================================================================
-   MatchHallPage — Firestore users 컬렉션 기반 프로필 카드
-   ================================================================ */
-
 export const MatchHallPage: React.FC = () => {
   const navigate = useNavigate();
   const { isAuthed, userId } = useAuth();
@@ -32,20 +28,49 @@ export const MatchHallPage: React.FC = () => {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
   const [loginModal, setLoginModal] = useState(false);
   const [profileModal, setProfileModal] = useState(false);
   const [matchModal, setMatchModal] = useState(false);
   const [flowerModal, setFlowerModal] = useState(false);
   const [visibilityModal, setVisibilityModal] = useState(false);
   const [visibilityUpdating, setVisibilityUpdating] = useState(false);
-  const [imgUrl, setImgUrl] = useState<string | null>(null);
-  const [imgFailed, setImgFailed] = useState(false);
-  const {flower: myFlower } = useMyFlower();
+
+  const [frontImgUrl, setFrontImgUrl] = useState<string | null>(null);
+  const [frontImgFailed, setFrontImgFailed] = useState(false);
+  const [backImgUrl, setBackImgUrl] = useState<string | null>(null);
+  const [backImgFailed, setBackImgFailed] = useState(false);
+
+  const { flower: myFlower } = useMyFlower();
   const [requesting, setRequesting] = useState(false);
+
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifs, setNotifs] = useState<AppNotification[]>([]);
 
-  /* ---- 알림 구독 ---- */
+  const [dragOffsetX, setDragOffsetX] = useState(0);
+  const [isDraggingCard, setIsDraggingCard] = useState(false);
+  const [isAnimatingOut, setIsAnimatingOut] = useState(false);
+  const [cardPhase, setCardPhase] = useState<"idle" | "dragging" | "animating-out">(
+    "idle",
+  );
+  const [exitingProfile, setExitingProfile] = useState<UserDoc | null>(null);
+  const [exitingImgUrl, setExitingImgUrl] = useState<string | null>(null);
+  const [exitingImgFailed, setExitingImgFailed] = useState(false);
+  const [exitingTranslateX, setExitingTranslateX] = useState(0);
+  const [exitDirection, setExitDirection] = useState<"left" | "right" | null>(null);
+
+  const seenIds = useRef(new Set<string>());
+  const fetchingRef = useRef(false);
+  const myGenderRef = useRef<boolean | null>(null);
+
+  const swipeStartXRef = useRef<number | null>(null);
+  const swipeStartYRef = useRef<number | null>(null);
+  const swipeDeltaXRef = useRef(0);
+  const isSwipingRef = useRef(false);
+
+  const BATCH_SIZE = 50;
+  const PREFETCH_THRESHOLD = 10;
+
   useEffect(() => {
     if (!userId) return;
     const unsub = subscribeMyNotifications({
@@ -58,58 +83,48 @@ export const MatchHallPage: React.FC = () => {
 
   const unreadCount = notifs.filter((n) => !n.readAt).length;
 
-  /* ---- 알림 body 안의 전화번호 → 이름 치환 ---- */
-  // body/title에서 "+82XXXXXXXXX님" 패턴의 UID 수집
   const notifUids = useMemo(() => {
     const phoneRe = /(\+82\d{7,11})님/g;
     const uids = new Set<string>();
+
     notifs.forEach((n) => {
       let m: RegExpExecArray | null;
       for (const text of [n.body, n.title]) {
         phoneRe.lastIndex = 0;
         while ((m = phoneRe.exec(text)) !== null) uids.add(m[1]);
       }
-      // targetUid도 미리 로드
       if (n.targetUid) uids.add(n.targetUid);
     });
+
     return Array.from(uids);
   }, [notifs]);
 
   const notifNameMap = useUserNames(notifUids);
 
-  /** body/title의 전화번호를 이름으로 치환 */
   const resolveText = (text: string): string =>
-    text.replace(/(\+82\d{7,11})님/g, (_, uid) =>
-      `${notifNameMap[uid] ?? uid}님`,
-    );
+    text.replace(/(\+82\d{7,11})님/g, (_, uid) => `${notifNameMap[uid] ?? uid}님`);
 
-  /* ---- 중복 방지 & prefetch 상태 ---- */
-  const seenIds = useRef(new Set<string>());
-  const fetchingRef = useRef(false);
-  const myGenderRef = useRef<boolean | null>(null);
-
-  const BATCH_SIZE = 50;
-  const PREFETCH_THRESHOLD = 10;
-
-  /** 배치를 가져와서 seenIds 필터 + shuffle 후 반환 (seenIds 등록은 호출 측에서) */
-  const loadBatch = useCallback(async (myGender?: boolean): Promise<UserDoc[]> => {
-    const raw = await fetchCandidateBatch({ myGender, limitN: BATCH_SIZE });
-    const fresh = raw.filter((u) => {
-      if (userId && u.id === userId) return false;
-      if (seenIds.current.has(u.id)) return false;
-      return true;
-    });
-    return shuffle(fresh);
-  }, [userId]);
+  const loadBatch = useCallback(
+    async (myGender?: boolean): Promise<UserDoc[]> => {
+      const raw = await fetchCandidateBatch({ myGender, limitN: BATCH_SIZE });
+      const fresh = raw.filter((u) => {
+        if (userId && u.id === userId) return false;
+        if (seenIds.current.has(u.id)) return false;
+        return true;
+      });
+      return shuffle(fresh);
+    },
+    [userId],
+  );
 
   const markSeen = (users: UserDoc[]) => {
     users.forEach((u) => seenIds.current.add(u.id));
   };
 
-  /* ---- 최초 후보 로드 (로그인: 반대 성별 / 비로그인: 전체) ---- */
   useEffect(() => {
     let alive = true;
     setLoading(true);
+
     (async () => {
       try {
         let gender: boolean | undefined;
@@ -117,6 +132,7 @@ export const MatchHallPage: React.FC = () => {
         if (userId) {
           const me = await fetchUser(userId);
           if (!alive) return;
+
           if (me?.isProfileVisible === false) {
             setVisibilityModal(true);
           }
@@ -128,9 +144,9 @@ export const MatchHallPage: React.FC = () => {
 
         const candidates = await loadBatch(gender);
         if (!alive) return;
+
         markSeen(candidates);
         setProfiles(candidates);
-
         setCurrentIdx(0);
         setError(null);
       } catch (err) {
@@ -142,10 +158,11 @@ export const MatchHallPage: React.FC = () => {
       }
     })();
 
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [userId, loadBatch]);
 
-  /* ---- 추가 배치 프리페치 ---- */
   const prefetch = useCallback(async () => {
     if (fetchingRef.current) return;
     fetchingRef.current = true;
@@ -164,31 +181,75 @@ export const MatchHallPage: React.FC = () => {
     }
   }, [loadBatch]);
 
-  /* ---- 현재 프로필 ---- */
   const current: UserDoc | undefined =
-    profiles.length > 0 && currentIdx < profiles.length
-      ? profiles[currentIdx]
-      : undefined;
+    profiles.length > 0 && currentIdx < profiles.length ? profiles[currentIdx] : undefined;
+  const backProfile: UserDoc | undefined =
+    profiles.length > 1 ? profiles[(currentIdx + 1) % profiles.length] : undefined;
 
-  /* ---- 액션 ---- */
-  const handleNext = () => {
-    if (profiles.length === 0) return;
-    const nextIdx = currentIdx + 1;
+  const maybePrefetchAfterNext = useCallback(
+    (baseIdx: number) => {
+      const nextIdx = baseIdx + 1;
+      const remaining = profiles.length - nextIdx;
+      if (remaining <= PREFETCH_THRESHOLD) {
+        prefetch();
+      }
+    },
+    [profiles.length, prefetch],
+  );
 
-    if (nextIdx >= profiles.length) {
-      // 끝까지 봤으면 처음으로
-      setCurrentIdx(0);
-      return;
-    }
+  const animateToDirection = useCallback(
+    (direction: "left" | "right") => {
+      if (profiles.length === 0 || isAnimatingOut || !current) return;
+  
+      const outDistance = Math.max(window.innerWidth, 420);
+      const startOffsetX = dragOffsetX;
+  
+      setExitingProfile(current);
+      setExitingImgUrl(frontImgUrl);
+      setExitingImgFailed(frontImgFailed);
+      setExitingTranslateX(startOffsetX);
+      setExitDirection(direction);
+      setIsAnimatingOut(true);
+  
+      // 방향과 상관없이 항상 다음 카드로 이동
+      setCurrentIdx((prev) => {
+        const next = prev + 1;
+        maybePrefetchAfterNext(prev);
+        return next >= profiles.length ? 0 : next;
+      });
+  
+      setDragOffsetX(0);
+      setIsDraggingCard(false);
+      setCardPhase("idle");
+  
+      window.requestAnimationFrame(() => {
+        setExitingTranslateX(direction === "left" ? -outDistance : outDistance);
+      });
+  
+      window.setTimeout(() => {
+        setExitingProfile(null);
+        setExitingImgUrl(null);
+        setExitingImgFailed(false);
+        setExitingTranslateX(0);
+        setExitDirection(null);
+        setIsAnimatingOut(false);
+        isSwipingRef.current = false;
+      }, 180);
+    },
+    [
+      profiles.length,
+      isAnimatingOut,
+      current,
+      dragOffsetX,
+      frontImgUrl,
+      frontImgFailed,
+      maybePrefetchAfterNext,
+    ],
+  );
 
-    setCurrentIdx(nextIdx);
-
-    // 남은 카드가 threshold 이하이면 미리 가져오기
-    const remaining = profiles.length - nextIdx;
-    if (remaining <= PREFETCH_THRESHOLD) {
-      prefetch();
-    }
-  };
+  const handleSkip = useCallback(() => {
+    animateToDirection("left");
+  }, [animateToDirection]);
 
   const handleHeart = () => {
     if (!isAuthed) {
@@ -205,85 +266,264 @@ export const MatchHallPage: React.FC = () => {
     navigate(`/profiles/${encodeURIComponent(current.id)}`);
   };
 
-  /* ---- 프로필 이미지 우선순위 로드 (AI path > direct URL > flower id) ---- */
+  const handleCardPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== "touch" && e.pointerType !== "pen" && e.pointerType !== "mouse") {
+      return;
+    }
+    if (isAnimatingOut) return;
+
+    swipeStartXRef.current = e.clientX;
+    swipeStartYRef.current = e.clientY;
+    swipeDeltaXRef.current = 0;
+    isSwipingRef.current = false;
+
+    setIsDraggingCard(true);
+    setCardPhase("dragging");
+    setDragOffsetX(0);
+
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handleCardPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (swipeStartXRef.current == null || swipeStartYRef.current == null) return;
+
+    const deltaX = e.clientX - swipeStartXRef.current;
+    const deltaY = e.clientY - swipeStartYRef.current;
+    swipeDeltaXRef.current = deltaX;
+
+    if (Math.abs(deltaX) > 10 && Math.abs(deltaX) > Math.abs(deltaY)) {
+      isSwipingRef.current = true;
+      setDragOffsetX(deltaX * 0.95);
+    } else if (!isSwipingRef.current) {
+      setDragOffsetX(0);
+    }
+  };
+
+  const handleCardPointerUp = () => {
+    const delta = swipeDeltaXRef.current;
+    const threshold = 56;
+
+    swipeStartXRef.current = null;
+    swipeStartYRef.current = null;
+    swipeDeltaXRef.current = 0;
+    setIsDraggingCard(false);
+
+    if (Math.abs(delta) >= threshold) {
+      isSwipingRef.current = true;
+      animateToDirection(delta < 0 ? "left" : "right");
+      return;
+    }
+
+    setDragOffsetX(0);
+    setCardPhase("idle");
+
+    window.setTimeout(() => {
+      isSwipingRef.current = false;
+    }, 120);
+  };
+
+  const handleCardClick = () => {
+    if (isSwipingRef.current || isDraggingCard || isAnimatingOut) return;
+    handleOpenProfile();
+  };
+
+  const resolveProfileImage = useCallback(async (profile?: UserDoc): Promise<string | null> => {
+    if (!profile) return null;
+    const imagePath = profile.profileImagePath?.trim();
+    const directUrlRaw = (profile.photoURL ?? profile.aiPhotoURL) as string | undefined;
+    const directUrl = typeof directUrlRaw === "string" ? directUrlRaw.trim() : "";
+    const id = profile.profileImageId;
+
+    if (imagePath) {
+      const cacheKey = `path:${imagePath}`;
+      if (imgCache.has(cacheKey)) return imgCache.get(cacheKey)!;
+      try {
+        const url = await getDownloadURL(ref(storage, imagePath));
+        imgCache.set(cacheKey, url);
+        return url;
+      } catch {
+        // fallthrough
+      }
+    }
+
+    if (directUrl) {
+      const cacheKey = `url:${directUrl}`;
+      if (imgCache.has(cacheKey)) return imgCache.get(cacheKey)!;
+      imgCache.set(cacheKey, directUrl);
+      return directUrl;
+    }
+
+    if (!id) return null;
+    const cacheKey = `flower:${id}`;
+    if (imgCache.has(cacheKey)) return imgCache.get(cacheKey)!;
+    const url = await getFlowerProfileUrl(id);
+    if (url) imgCache.set(cacheKey, url);
+    return url;
+  }, []);
+
   useEffect(() => {
     let alive = true;
-    const imagePath = current?.profileImagePath?.trim();
-    const directUrlRaw = (current?.photoURL ?? current?.aiPhotoURL) as string | undefined;
-    const directUrl = typeof directUrlRaw === "string" ? directUrlRaw.trim() : "";
-    const id = current?.profileImageId;
-    setImgFailed(false);
+    setFrontImgFailed(false);
+    setBackImgFailed(false);
+    setFrontImgUrl(null);
+    setBackImgUrl(null);
 
-    setImgUrl(null); // 로딩 중에는 placeholder
     const resolve = async () => {
-      if (imagePath) {
-        const cacheKey = `path:${imagePath}`;
-        if (imgCache.has(cacheKey)) {
-          if (alive) setImgUrl(imgCache.get(cacheKey)!);
-          return;
-        }
-        try {
-          const url = await getDownloadURL(ref(storage, imagePath));
-          if (!alive) return;
-          imgCache.set(cacheKey, url);
-          setImgUrl(url);
-          return;
-        } catch {
-          // path 로드 실패 시 다음 후보로 폴백
-        }
-      }
-
-      if (directUrl) {
-        const cacheKey = `url:${directUrl}`;
-        if (imgCache.has(cacheKey)) {
-          if (alive) setImgUrl(imgCache.get(cacheKey)!);
-          return;
-        }
-        imgCache.set(cacheKey, directUrl);
-        if (alive) setImgUrl(directUrl);
-        return;
-      }
-
-      if (!id) {
-        if (alive) setImgUrl(null);
-        return;
-      }
-
-      const cacheKey = `flower:${id}`;
-      if (imgCache.has(cacheKey)) {
-        if (alive) setImgUrl(imgCache.get(cacheKey)!);
-        return;
-      }
-
-      const url = await getFlowerProfileUrl(id);
+      const [frontUrl, backUrl] = await Promise.all([
+        resolveProfileImage(current),
+        resolveProfileImage(backProfile),
+      ]);
       if (!alive) return;
-      if (url) imgCache.set(cacheKey, url);
-      setImgUrl(url);
+      setFrontImgUrl(frontUrl);
+      setBackImgUrl(backUrl);
     };
 
-    resolve();
+    void resolve();
 
     return () => {
       alive = false;
     };
-  }, [current?.profileImagePath, current?.photoURL, current?.aiPhotoURL, current?.profileImageId]);
+  }, [current, backProfile, resolveProfileImage]);
 
-  /* ---- 파생 데이터 (current 기반) ---- */
-  const showImg = !!imgUrl && !imgFailed;
-  const age = current?.born ? calcAge(Number(current.born)) : null;
-  const chips = current
-    ? [current.mbti, current.department, current.cigar]
-        .filter((v): v is string => !!v && String(v).trim() !== "")
-        .slice(0, 3)
-    : [];
+  const getCardViewData = (profile?: UserDoc) => {
+    const age = profile?.born ? calcAge(Number(profile.born)) : null;
+    const chips = profile
+      ? (Array.isArray(profile.interests) ? profile.interests : [])
+          .filter((v): v is string => typeof v === "string" && v.trim() !== "")
+          .slice(0, 4)
+      : [];
+    const metaChips = [profile?.residence?.trim(), profile?.mbti?.trim()].filter(
+      (v): v is string => !!v,
+    );
+    const introText = typeof profile?.aboutme === "string" ? profile.aboutme.trim() : "";
+    const schoolText = typeof profile?.school === "string" ? profile.school.trim() : "";
+    return { age, chips, metaChips, introText, schoolText };
+  };
 
-  /* ================================================================
-     렌더링
-     ================================================================ */
+  const renderProfileCardContent = (
+    profile: UserDoc,
+    imgUrl: string | null,
+    imgFailed: boolean,
+    onImageError: () => void,
+  ) => {
+    const { age, chips, metaChips, introText, schoolText } = getCardViewData(profile);
+    const showImg = !!imgUrl && !imgFailed;
+    return (
+      <>
+        <div style={styles.imageWrap}>
+          {showImg ? (
+            <img
+              src={imgUrl!}
+              alt={profile.name || "profile"}
+              style={styles.profileImage}
+              onError={onImageError}
+            />
+          ) : (
+            <div style={styles.imagePlaceholder}>
+              <span style={styles.placeholderText}>{profile.name || "Profile"}</span>
+            </div>
+          )}
+
+          <div style={styles.imageOverlayTop}>
+            {profile.schoolVerified === true ? (
+              <span style={styles.overlayVerifiedBadge}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M20 7L10 17l-5-5"
+                    stroke={color.white}
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                학교인증
+              </span>
+            ) : (
+              <span />
+            )}
+          </div>
+
+          <div style={styles.imageOverlayBottom}>
+            <div style={styles.nameRow}>
+              <span style={styles.nameOnImage}>{profile.name || "이름 없음"}</span>
+              {age != null && <span style={styles.ageOnImage}>{age}세</span>}
+            </div>
+
+            {schoolText && (
+              <div style={styles.schoolInlineRow}>
+                <span style={styles.schoolOnImage}>{schoolText}</span>
+              </div>
+            )}
+
+            {metaChips.length > 0 && (
+              <div style={styles.metaInlineRow}>
+                {metaChips.map((item) => (
+                  <span key={item} style={styles.metaOnImage}>
+                    {item}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={styles.cardBody}>
+          {chips.length > 0 && (
+            <div style={styles.tags}>
+              {chips.map((tag) => (
+                <span key={tag} style={styles.tag}>
+                  #{tag}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {introText ? (
+            <div style={styles.introCard}>
+              <p style={styles.aboutme}>{introText}</p>
+            </div>
+          ) : (
+            <div style={styles.emptyIntroCard}>
+              <p style={styles.emptyIntroText}>프로필을 눌러 자세한 소개를 확인해보세요</p>
+            </div>
+          )}
+
+          <div style={styles.profileHintRow}>
+            <span style={styles.profileHintText}>프로필 자세히 보기</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M9 5l7 7-7 7"
+                stroke={color.gray400}
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+        </div>
+      </>
+    );
+  };
+
+  const absOffset = Math.abs(dragOffsetX);
+  const cardScale = isDraggingCard ? 0.992 : cardPhase === "animating-out" ? 0.985 : 1;
+
+  const cardTransition =
+    cardPhase === "dragging"
+      ? "transform 0s, box-shadow 0.12s ease, opacity 0.12s ease"
+      : cardPhase === "animating-out"
+        ? "transform 180ms ease-out, box-shadow 180ms ease-out, opacity 180ms ease-out"
+        : "transform 180ms ease, box-shadow 180ms ease, opacity 180ms ease";
+
+  const cardOpacity =
+    cardPhase === "animating-out"
+      ? 0.94
+      : isDraggingCard
+        ? Math.max(0.95, 1 - absOffset / 1200)
+        : 1;
 
   return (
     <div style={styles.page}>
-      {/* ---- 종 아이콘 버튼 ---- */}
       <div style={styles.bellWrap}>
         <button
           aria-label="알림"
@@ -307,14 +547,11 @@ export const MatchHallPage: React.FC = () => {
             />
           </svg>
           {unreadCount > 0 && (
-            <span style={styles.bellBadge}>
-              {unreadCount > 9 ? "9+" : unreadCount}
-            </span>
+            <span style={styles.bellBadge}>{unreadCount > 9 ? "9+" : unreadCount}</span>
           )}
         </button>
       </div>
 
-      {/* ---- 알림 패널 ---- */}
       {notifOpen && (
         <>
           <div style={styles.notifOverlay} onClick={() => setNotifOpen(false)} />
@@ -341,8 +578,7 @@ export const MatchHallPage: React.FC = () => {
             ) : (
               <div style={styles.notifList}>
                 {notifs.map((n) => {
-                  const isClickable =
-                    n.type === "LIKE_RECEIVED" || n.type === "MATCH_SUCCESS";
+                  const isClickable = n.type === "LIKE_RECEIVED" || n.type === "MATCH_SUCCESS";
 
                   const handleNotifClick = () => {
                     if (!isClickable) return;
@@ -350,12 +586,7 @@ export const MatchHallPage: React.FC = () => {
                     if (n.type === "LIKE_RECEIVED") {
                       navigate("/like");
                     } else if (n.type === "MATCH_SUCCESS") {
-                      // targetUid 있으면 해당 채팅방, 없으면 채팅 목록으로
-                      navigate(
-                        n.targetUid
-                          ? `/chat/${encodeURIComponent(n.targetUid)}`
-                          : "/chat",
-                      );
+                      navigate(n.targetUid ? `/chat/${encodeURIComponent(n.targetUid)}` : "/chat");
                     }
                   };
 
@@ -376,10 +607,10 @@ export const MatchHallPage: React.FC = () => {
                             n.type === "MATCH_SUCCESS"
                               ? color.mint500
                               : n.type === "LIKE_RECEIVED"
-                              ? color.mint400
-                              : n.type === "REFUND_DONE"
-                              ? color.mint300
-                              : color.gray400,
+                                ? color.mint400
+                                : n.type === "REFUND_DONE"
+                                  ? color.mint300
+                                  : color.gray400,
                         }}
                       />
                       <div style={styles.notifBody}>
@@ -405,9 +636,7 @@ export const MatchHallPage: React.FC = () => {
         </>
       )}
 
-      {/* ---- 카드 영역 ---- */}
       {loading ? (
-        /* 스켈레톤 카드 */
         <div style={styles.card}>
           <div style={styles.skeletonImage}>
             <div style={styles.skeletonPulse} />
@@ -419,111 +648,107 @@ export const MatchHallPage: React.FC = () => {
           </div>
         </div>
       ) : error ? (
-        /* 에러 */
         <div style={styles.messageBox}>
           <p style={{ color: color.danger }}>{error}</p>
         </div>
       ) : !current ? (
-        /* 유저 0명 */
         <div style={styles.messageBox}>
           <p>데이터 없음</p>
         </div>
       ) : (
-        /* 실제 프로필 카드 */
+        <div style={styles.cardStack}>
+      {backProfile && (
         <div
-          style={{ ...styles.card, ...styles.cardClickable }}
-          onClick={handleOpenProfile}
-          role="button"
+          key={`back-${backProfile.id}`}
+          style={{
+            ...styles.card,
+            ...styles.backCardLayer,
+            transform: isAnimatingOut
+              ? "translateY(0) scale(1)"
+              : "translateY(12px) scale(0.975)",
+            opacity: isAnimatingOut ? 1 : 0.94,
+            transition: "transform 180ms ease-out, opacity 180ms ease-out",
+          }}
+          aria-hidden="true"
         >
-          {showImg ? (
-            <img
-              src={imgUrl!}
-              alt={current.name || "profile"}
-              style={styles.profileImage}
-              onError={() => setImgFailed(true)}
-            />
-          ) : (
-            <div style={styles.imagePlaceholder}>
-              <span style={styles.placeholderText}>
-                {current.name || "Profile"}
-              </span>
-            </div>
+          {renderProfileCardContent(
+            backProfile,
+            backImgUrl,
+            backImgFailed,
+            () => setBackImgFailed(true),
           )}
-
-          <div style={styles.cardBody}>
-            <div style={styles.nameRow}>
-              <span style={styles.name}>{current.name || "이름 없음"}</span>
-              {age != null && <span style={styles.age}>{age}세</span>}
-            </div>
-
-            {(current.residence || current.mbti) && (
-              <p style={styles.location}>
-                {current.residence ?? ""}
-                {current.residence && current.mbti ? " · " : ""}
-                {current.mbti ?? ""}
-              </p>
-            )}
-
-            {current.school && (
-              <div style={styles.schoolRow}>
-                <p style={styles.school}>{current.school}</p>
-                {current.schoolVerified === true && (
-                  <span style={styles.schoolVerifiedBadge}>
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M20 7L10 17l-5-5"
-                        stroke={color.white}
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                    학교인증
-                  </span>
-                )}
-              </div>
-            )}
-
-            {current.aboutme && (
-              <p style={styles.aboutme}>{current.aboutme}</p>
-            )}
-
-            {chips.length > 0 && (
-              <div style={styles.tags}>
-                {chips.map((tag) => (
-                  <span key={tag} style={styles.tag}>
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
       )}
 
-      {/* ---- 액션 버튼 (데이터 있을 때만) ---- */}
+      <div
+        key={`front-${current.id}`}
+        style={{
+          ...styles.card,
+          ...styles.frontCardLayer,
+          ...styles.cardClickable,
+          transform: `translateX(${isAnimatingOut ? 0 : dragOffsetX}px) scale(${
+            isAnimatingOut ? 1 : cardScale
+          })`,
+          transition: isAnimatingOut
+            ? "transform 0ms, box-shadow 180ms ease, opacity 180ms ease"
+            : cardTransition,
+          boxShadow: isDraggingCard ? shadow.modal : shadow.card,
+          opacity: isAnimatingOut ? 1 : cardOpacity,
+        }}
+        onClick={handleCardClick}
+        onPointerDown={handleCardPointerDown}
+        onPointerMove={handleCardPointerMove}
+        onPointerUp={handleCardPointerUp}
+        onPointerCancel={handleCardPointerUp}
+        role="button"
+      >
+        {renderProfileCardContent(current, frontImgUrl, frontImgFailed, () =>
+          setFrontImgFailed(true),
+        )}
+      </div>
+
+      {exitingProfile && (
+        <div
+          key={`exiting-${exitingProfile.id}`}
+          style={{
+            ...styles.card,
+            ...styles.exitingCardLayer,
+            transform: `translateX(${exitingTranslateX}px) scale(1)`,
+            opacity: 0.96,
+            transition: "transform 180ms ease-out, opacity 180ms ease-out",
+            boxShadow: shadow.modal,
+          }}
+          aria-hidden="true"
+        >
+          {renderProfileCardContent(
+            exitingProfile,
+            exitingImgUrl,
+            exitingImgFailed,
+            () => setExitingImgFailed(true),
+          )}
+        </div>
+      )}
+    </div>
+      )}
+
       {!loading && current && (
         <div style={styles.actions}>
-          <button style={styles.actionBtn} onClick={handleNext}>
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
-              <path
-                d="M9 5l7 7-7 7"
-                stroke={color.gray600}
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+          <button style={styles.actionBtn} onClick={handleSkip} aria-label="넘기기">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+            <path
+              d="M9 5l7 7-7 7"
+              stroke={color.gray600}
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
           </button>
+
           <button
             style={{ ...styles.actionBtn, ...styles.heartBtn }}
             onClick={handleHeart}
+            aria-label="매칭 요청"
           >
             <svg width="32" height="32" viewBox="0 0 24 24" fill={color.white}>
               <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
@@ -532,10 +757,8 @@ export const MatchHallPage: React.FC = () => {
         </div>
       )}
 
-      {/* ---- 하단 탭바 ---- */}
       <TabBar />
 
-      {/* ---- 로그인 모달 ---- */}
       <Modal
         open={loginModal}
         title="로그인 하기"
@@ -549,7 +772,6 @@ export const MatchHallPage: React.FC = () => {
         }}
       />
 
-      {/* ---- 프로필 작성 안내 모달 ---- */}
       <Modal
         open={profileModal}
         title="프로필 작성"
@@ -563,7 +785,6 @@ export const MatchHallPage: React.FC = () => {
         }}
       />
 
-      {/* ---- 매칭 요청 모달 ---- */}
       <Modal
         open={matchModal}
         title="매칭 요청"
@@ -587,7 +808,7 @@ export const MatchHallPage: React.FC = () => {
             } else {
               alert(result.message);
             }
-          } catch (err) {
+          } catch {
             setMatchModal(false);
             alert("요청에 실패했습니다. 다시 시도해주세요.");
           } finally {
@@ -595,9 +816,7 @@ export const MatchHallPage: React.FC = () => {
           }
         }}
       >
-        <p style={styles.refundNotice}>
-          요청이 거절되면 100% 환급됩니다.
-        </p>
+        <p style={styles.refundNotice}>요청이 거절되면 100% 환급됩니다.</p>
         <div style={styles.flowerInfo}>
           <div style={styles.flowerRow}>
             <span style={styles.flowerLabel}>보유 플라워:</span>
@@ -610,7 +829,6 @@ export const MatchHallPage: React.FC = () => {
         </div>
       </Modal>
 
-      {/* ---- 플라워 부족 모달 ---- */}
       <Modal
         open={flowerModal}
         title="플라워 부족"
@@ -624,7 +842,6 @@ export const MatchHallPage: React.FC = () => {
         }}
       />
 
-      {/* ---- 매칭 기능 활성화 모달 ---- */}
       <Modal
         open={visibilityModal}
         title="매칭 기능 활성화"
@@ -652,10 +869,6 @@ export const MatchHallPage: React.FC = () => {
   );
 };
 
-/* ================================================================
-   스타일
-   ================================================================ */
-
 const skeletonKeyframes = `
 @keyframes skeleton-pulse {
   0% { opacity: 0.6; }
@@ -664,7 +877,6 @@ const skeletonKeyframes = `
 }
 `;
 
-/* 스켈레톤 keyframes를 head에 주입 */
 if (typeof document !== "undefined") {
   const id = "skeleton-keyframes";
   if (!document.getElementById(id)) {
@@ -683,6 +895,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     alignItems: "center",
     paddingTop: 16,
+    background: color.gray50,
   },
   messageBox: {
     display: "flex",
@@ -694,28 +907,69 @@ const styles: Record<string, React.CSSProperties> = {
     background: color.gray100,
     color: color.gray500,
   },
+  cardStack: {
+    position: "relative",
+    width: "calc(100% - 32px)",
+    minHeight: 600,
+    maxHeight: 600,
+  },
 
-  /* ---- 카드 ---- */
   card: {
     width: "calc(100% - 32px)",
-    borderRadius: radius.xxl,
+    minHeight: 600,
+    maxHeight: 600,
+    display: "flex",
+    flexDirection: "column",
+    borderRadius: 28,
     overflow: "hidden",
     boxShadow: shadow.card,
     background: color.white,
+    border: `1px solid ${color.gray100}`,
+  },
+  backCardLayer: {
+    position: "absolute",
+    inset: 0,
+    width: "100%",
+    transform: "translateY(12px) scale(0.975)",
+    opacity: 0.94,
+    zIndex: 1,
+    pointerEvents: "none",
+  },
+  frontCardLayer: {
+    position: "absolute",
+    inset: 0,
+    width: "100%",
+    zIndex: 2,
+  },
+  exitingCardLayer: {
+    position: "absolute",
+    inset: 0,
+    width: "100%",
+    zIndex: 3,
+    pointerEvents: "none",
   },
   cardClickable: {
     cursor: "pointer",
+    touchAction: "pan-y",
+  },
+  imageWrap: {
+    position: "relative",
+    width: "100%",
+    height: 416,
+    flexShrink: 0,
+    overflow: "hidden",
+    background: color.gray100,
   },
   profileImage: {
     width: "100%",
-    height: 420,
-    objectFit: "cover" as const,
+    height: "100%",
+    objectFit: "cover",
     display: "block",
     background: color.gray100,
   },
   imagePlaceholder: {
     width: "100%",
-    height: 420,
+    height: "100%",
     background: `linear-gradient(135deg, ${color.mint100} 0%, ${color.mint300} 100%)`,
     display: "flex",
     alignItems: "center",
@@ -728,82 +982,158 @@ const styles: Record<string, React.CSSProperties> = {
     opacity: 0.6,
     letterSpacing: 1,
   },
-  cardBody: {
-    padding: "16px 20px 20px",
-  },
-  nameRow: {
-    display: "flex",
-    alignItems: "baseline",
-    gap: 8,
-  },
-  name: {
-    ...typo.heading,
-    color: color.gray900,
-  },
-  age: {
-    ...typo.body,
-    color: color.gray600,
-  },
-  location: {
-    ...typo.body,
-    color: color.gray500,
-    marginTop: 4,
-  },
-  school: {
-    ...typo.caption,
-    color: color.gray500,
-    marginTop: 2,
-  },
-  schoolRow: {
-    marginTop: 2,
+  imageOverlayTop: {
+    position: "absolute",
+    top: 14,
+    left: 14,
+    right: 14,
     display: "flex",
     alignItems: "center",
-    gap: 6,
-    flexWrap: "wrap" as const,
+    justifyContent: "space-between",
+    gap: 8,
   },
-  schoolVerifiedBadge: {
+  imageOverlayBottom: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    padding: "44px 18px 18px",
+    background:
+      "linear-gradient(to top, rgba(0,0,0,0.60) 0%, rgba(0,0,0,0.28) 45%, rgba(0,0,0,0.00) 100%)",
+  },
+  overlayVerifiedBadge: {
     ...typo.caption,
     display: "inline-flex",
     alignItems: "center",
-    gap: 3,
+    gap: 4,
+    padding: "6px 10px",
+    borderRadius: radius.full,
     background: color.mint500,
     color: color.white,
-    borderRadius: radius.full,
-    padding: "2px 8px",
     fontWeight: 700,
-    lineHeight: 1.2,
     boxShadow: shadow.button,
+    backdropFilter: "blur(4px)",
   },
-  aboutme: {
+  cardBody: {
+    height: 226,
+    display: "flex",
+    flexDirection: "column",
+    boxSizing: "border-box",
+    padding: "16px 18px 18px",
+  },
+  nameRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  nameOnImage: {
+    fontSize: 28,
+    lineHeight: "34px",
+    fontWeight: 800,
+    color: color.white,
+    letterSpacing: "-0.02em",
+  },
+  ageOnImage: {
+    fontSize: 18,
+    lineHeight: "24px",
+    fontWeight: 600,
+    color: "rgba(255,255,255,0.92)",
+  },
+  schoolInlineRow: {
+    marginTop: 6,
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    flexWrap: "wrap",
+  },
+  schoolOnImage: {
     ...typo.body,
-    color: color.gray700,
+    color: "rgba(255,255,255,0.92)",
+    fontWeight: 500,
+  },
+  metaInlineRow: {
     marginTop: 8,
-    display: "-webkit-box",
-    WebkitLineClamp: 2,
-    WebkitBoxOrient: "vertical" as any,
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    lineHeight: "20px",
-    maxHeight: 40,
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    flexWrap: "wrap",
+  },
+  metaOnImage: {
+    ...typo.caption,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "5px 9px",
+    borderRadius: radius.full,
+    background: "rgba(255,255,255,0.18)",
+    color: color.white,
+    border: "1px solid rgba(255,255,255,0.22)",
+    fontWeight: 600,
+    backdropFilter: "blur(6px)",
   },
   tags: {
     display: "flex",
     gap: 6,
-    marginTop: 10,
-    flexWrap: "wrap" as const,
+    marginTop: 12,
+    flexWrap: "wrap",
+    minHeight: 30,
+    maxHeight: 56,
+    overflow: "hidden",
+    alignContent: "flex-start",
   },
   tag: {
     ...typo.caption,
     background: color.mint50,
     color: color.mint700,
-    padding: "4px 10px",
+    padding: "5px 10px",
     borderRadius: radius.full,
+    border: `1px solid ${color.mint100}`,
+    fontWeight: 600,
+  },
+  aboutme: {
+    margin: 0,
+    ...typo.body,
+    color: color.gray700,
+    display: "-webkit-box",
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: "vertical" as any,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    lineHeight: "21px",
+    maxHeight: 42,
+  },
+  introCard: {
+    marginTop: 14,
+    padding: 0,
+    minHeight: 42,
+  },
+  emptyIntroCard: {
+    marginTop: 14,
+    padding: 0,
+    minHeight: 42,
+  },
+  emptyIntroText: {
+    margin: 0,
+    ...typo.body,
+    color: color.gray400,
+  },
+  profileHintRow: {
+    marginTop: "auto",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 4,
+  },
+  profileHintText: {
+    ...typo.caption,
+    color: color.gray400,
+    fontWeight: 600,
   },
 
-  /* ---- 스켈레톤 ---- */
   skeletonImage: {
     width: "100%",
-    height: 420,
+    height: 396,
     background: color.gray100,
     display: "flex",
     alignItems: "center",
@@ -823,10 +1153,9 @@ const styles: Record<string, React.CSSProperties> = {
     animation: "skeleton-pulse 1.4s ease-in-out infinite",
   },
 
-  /* ---- 액션 ---- */
   actions: {
     display: "flex",
-    gap: 24,
+    gap: 18,
     marginTop: 20,
   },
   actionBtn: {
@@ -844,30 +1173,6 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: shadow.button,
   },
 
-  /* ---- 사업자 정보 ---- */
-  businessSection: {
-    width: "calc(100% - 32px)",
-    marginTop: 32,
-  },
-  businessTitle: {
-    ...typo.subheading,
-    color: color.gray700,
-    marginBottom: 10,
-  },
-  businessCard: {
-    background: color.gray50,
-    border: `1px solid ${color.gray200}`,
-    borderRadius: radius.lg,
-    padding: "16px 18px",
-  },
-  businessRow: {
-    ...typo.caption,
-    color: color.gray500,
-    lineHeight: "20px",
-    marginBottom: 2,
-  },
-
-  /* ---- 모달 내 매칭 요청 ---- */
   refundNotice: {
     ...typo.body,
     color: color.mint600,
@@ -875,7 +1180,7 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 16,
   },
   flowerInfo: {
-    textAlign: "left" as const,
+    textAlign: "left",
     marginBottom: 4,
   },
   flowerRow: {
@@ -894,7 +1199,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
   },
 
-  /* ── 종 아이콘 ── */
   bellWrap: {
     position: "fixed",
     top: 14,
@@ -931,7 +1235,6 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0 3px",
   },
 
-  /* ── 알림 패널 ── */
   notifOverlay: {
     position: "fixed",
     inset: 0,
@@ -949,7 +1252,7 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: shadow.modal,
     zIndex: 870,
     display: "flex",
-    flexDirection: "column" as const,
+    flexDirection: "column",
     overflow: "hidden",
   },
   notifHeader: {
@@ -975,11 +1278,11 @@ const styles: Record<string, React.CSSProperties> = {
   notifEmpty: {
     ...typo.body,
     color: color.gray400,
-    textAlign: "center" as const,
+    textAlign: "center",
     padding: "28px 0",
   },
   notifList: {
-    overflowY: "auto" as const,
+    overflowY: "auto",
     flex: 1,
   },
   notifItem: {
@@ -1003,7 +1306,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   notifBody: {
     display: "flex",
-    flexDirection: "column" as const,
+    flexDirection: "column",
     gap: 2,
     flex: 1,
     minWidth: 0,

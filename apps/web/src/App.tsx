@@ -5,6 +5,7 @@ import { ProfileProvider } from "@/auth/ProfileContext";
 
 /* ---- Lazy imports ---- */
 const LandingPage = lazy(() => import("@/pages/LandingPage"));
+const MainPage = lazy(() => import("@/pages/MainPage"));
 const MatchHallPage = lazy(() =>
   import("@/pages/MatchHallPage").then((m) => ({ default: m.MatchHallPage }))
 );
@@ -38,6 +39,11 @@ const ChatListPage = lazy(() =>
 const InquiryPage = lazy(() =>
   import("@/pages/InquiryPage").then((m) => ({
     default: m.InquiryPage,
+  }))
+);
+const ReviewPage = lazy(() =>
+  import("@/pages/ReviewPage").then((m) => ({
+    default: m.ReviewPage,
   }))
 );
 const CommunityPage = lazy(() =>
@@ -121,7 +127,7 @@ const Loading = () => (
 const RootGate: React.FC = () => {
   const { isAuthed, authLoading } = useAuth();
   if (authLoading) return <Loading />;
-  return <MatchHallPage />;
+  return isAuthed ? <MatchHallPage /> : <LandingPage />;
 };
 
 const App: React.FC = () => {
@@ -133,6 +139,7 @@ const App: React.FC = () => {
             <Suspense fallback={<Loading />}>
               <Routes>
                 <Route path="/" element={<RootGate />} />
+                <Route path="/main" element={<MainPage />} />
                 <Route path="/match" element={<MatchHallPage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/signup" element={<SignupPage />} />
@@ -142,6 +149,7 @@ const App: React.FC = () => {
                 <Route path="/profiles/:uid" element={<EditProfilePage mode="read" />} />
                 <Route path="/select" element={<SelectionPage />} />
                 <Route path="/inquiry" element={<InquiryPage />} />
+                <Route path="/review" element={<ReviewPage />} />
                 <Route path="/community" element={<CommunityPage />} />
                 <Route path="/chat" element={<ChatListPage />} />
                 <Route path="/chat/:otherUid" element={<ChatRoomPage />} />
